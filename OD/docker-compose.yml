@@ -1,0 +1,108 @@
+# =============================================================================
+# Docker Compose for KAIST YOLOv8 Training
+# =============================================================================
+#
+# Usage:
+#   docker compose up train          # Train on visible images
+#   docker compose up train-thermal  # Train on thermal images
+#   docker compose up train-greyscale-inversion  # Train on greyscale-inverted
+#   docker compose up evaluate       # Run subgroup evaluation
+#   docker compose up plot           # Generate all plots
+#
+# The full project directory (exjobb/) is mounted at /workspace so that
+# the scripts' relative paths resolve correctly:
+#   /workspace/OD/            -> scripts, weights, runs
+#   /workspace/datasets/      -> preprocessed KAIST data
+#   /workspace/preprocessing/ -> config & metadata
+# =============================================================================
+
+services:
+  # --- Train on visible images ---
+  train:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ..:/workspace
+    working_dir: /workspace/OD
+    shm_size: '8gb'
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command: python train.py --modality visible
+
+  # --- Train on thermal images ---
+  train-thermal:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ..:/workspace
+    working_dir: /workspace/OD
+    shm_size: '8gb'
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command: python train.py --modality thermal
+
+  # --- Train on greyscale-inverted images ---
+  train-greyscale-inversion:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ..:/workspace
+    working_dir: /workspace/OD
+    shm_size: '8gb'
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command: python train.py --modality greyscale_inversion
+
+  # --- Evaluate best model on validation set ---
+  evaluate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ..:/workspace
+    working_dir: /workspace/OD
+    shm_size: '8gb'
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command: python evaluate.py --modality visible
+
+  # --- Generate all plots ---
+  plot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ..:/workspace
+    working_dir: /workspace/OD
+    command: python plot_results.py --modality visible

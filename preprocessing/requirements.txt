@@ -1,0 +1,5 @@
+# Requirements for KAIST preprocessing pipeline
+Pillow>=9.0
+numpy>=1.21
+matplotlib>=3.5
+tqdm>=4.60

@@ -1,0 +1,11 @@
+# =============================================================================
+# Python Dependencies for YOLOv8 KAIST Training Pipeline
+# =============================================================================
+# The ultralytics Docker image already includes torch, ultralytics,
+# numpy, opencv, and pillow. These are the additional packages needed
+# for evaluation, plotting, and data handling.
+# =============================================================================
+
+pandas>=2.0.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
