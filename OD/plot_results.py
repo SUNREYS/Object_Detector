@@ -932,6 +932,176 @@ def plot_quality_dashboard(df_obj: pd.DataFrame, modality: str):
     save_plot(fig, f"15_quality_dashboard_{modality}")
 
 
+def plot_contrast_distribution(df_obj: pd.DataFrame, modality: str):
+    """Plot 16: Per-object FG-BG contrast distributions with threshold zones.
+
+    Shows every object as part of overlapping histograms (detected vs missed),
+    with color-coded background zones indicating contrast interpretation.
+    """
+    print("[Plot 16] FG-BG contrast distribution with threshold zones...")
+
+    if df_obj.empty or "fg_bg_diff" not in df_obj.columns:
+        print("  No fg_bg_diff data. Skipping.")
+        return
+
+    df = df_obj[df_obj["fg_bg_diff"].notna()].copy()
+    if len(df) < 20:
+        print("  Too few objects. Skipping.")
+        return
+
+    detected = df[df["detected"] == True]["fg_bg_diff"]
+    missed = df[df["detected"] == False]["fg_bg_diff"]
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    # Background threshold zones
+    zones = [
+        (0, 5, "#ffebee", "Very Low"),
+        (5, 15, "#fff3e0", "Low"),
+        (15, 30, "#e8f5e9", "Moderate"),
+        (30, 60, "#e3f2fd", "High"),
+        (60, max(df["fg_bg_diff"].max() + 5, 65), "#e8eaf6", "Very High"),
+    ]
+    x_max = max(df["fg_bg_diff"].max() + 5, 65)
+    for lo, hi, color, label in zones:
+        ax.axvspan(lo, min(hi, x_max), alpha=0.4, color=color, zorder=0)
+
+    # Overlapping histograms
+    bins = np.linspace(0, x_max, 50)
+    ax.hist(detected, bins=bins, alpha=0.6, color="#4CAF50", label=f"Detected (n={len(detected)})",
+            edgecolor="white", linewidth=0.5, zorder=2)
+    ax.hist(missed, bins=bins, alpha=0.6, color="#F44336", label=f"Missed (n={len(missed)})",
+            edgecolor="white", linewidth=0.5, zorder=2)
+
+    # Zone labels (drawn after histograms so ylim is correct)
+    y_top = ax.get_ylim()[1]
+    for lo, hi, color, label in zones:
+        mid = (lo + min(hi, x_max)) / 2
+        ax.text(mid, y_top * 0.95, label, ha="center", va="top",
+                fontsize=8, fontstyle="italic", color="#555555", zorder=5)
+
+    # Threshold lines
+    for thresh in [5, 15, 30, 60]:
+        if thresh < x_max:
+            ax.axvline(thresh, color="#999999", linestyle="--",
+                       linewidth=0.8, alpha=0.7, zorder=3)
+
+    ax.set_xlabel("FG-BG Brightness Difference (0-255 scale)")
+    ax.set_ylabel("Number of Objects")
+    ax.set_title(
+        f"Distribution of Object-Background Contrast -- {modality.capitalize()}",
+        fontsize=14)
+    ax.legend(fontsize=10)
+    ax.grid(axis="y", alpha=0.2)
+    fig.tight_layout()
+    save_plot(fig, f"16_contrast_distribution_{modality}")
+
+
+def plot_sharpness_distribution(df_obj: pd.DataFrame, modality: str):
+    """Plot 17: Per-object sharpness distributions (detected vs missed).
+
+    Shows every object as part of overlapping histograms.
+    """
+    print("[Plot 17] Sharpness distribution (detected vs missed)...")
+
+    if df_obj.empty or "object_blur" not in df_obj.columns:
+        print("  No object_blur data. Skipping.")
+        return
+
+    df = df_obj[df_obj["object_blur"].notna()].copy()
+    if len(df) < 20:
+        print("  Too few objects. Skipping.")
+        return
+
+    detected = df[df["detected"] == True]["object_blur"]
+    missed = df[df["detected"] == False]["object_blur"]
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    # Use percentile-based x range to avoid extreme outliers stretching the plot
+    x_max = df["object_blur"].quantile(0.99)
+    bins = np.linspace(0, x_max, 50)
+
+    ax.hist(detected, bins=bins, alpha=0.6, color="#4CAF50",
+            label=f"Detected (n={len(detected)})",
+            edgecolor="white", linewidth=0.5)
+    ax.hist(missed, bins=bins, alpha=0.6, color="#F44336",
+            label=f"Missed (n={len(missed)})",
+            edgecolor="white", linewidth=0.5)
+
+    # Add median lines (staggered vertically to avoid overlap)
+    y_top = ax.get_ylim()[1]
+    for i, (vals, color, grp) in enumerate([(detected, "#2E7D32", "Detected"),
+                                             (missed, "#C62828", "Missed")]):
+        med = vals.median()
+        ax.axvline(med, color=color, linestyle="-", linewidth=2, alpha=0.8)
+        y_pos = y_top * (0.92 - i * 0.08)
+        ax.text(med + (x_max * 0.01), y_pos, f"{grp} median={med:.0f}",
+                color=color, fontsize=9, fontweight="bold")
+
+    ax.set_xlabel("Laplacian Variance (higher = sharper)")
+    ax.set_ylabel("Number of Objects")
+    ax.set_title(
+        f"Distribution of Object Sharpness -- {modality.capitalize()}",
+        fontsize=14)
+    ax.legend(fontsize=10)
+    ax.grid(axis="y", alpha=0.2)
+    fig.tight_layout()
+    save_plot(fig, f"17_sharpness_distribution_{modality}")
+
+
+def plot_edge_strength_distribution(df_obj: pd.DataFrame, modality: str):
+    """Plot 18: Per-object edge strength distributions (detected vs missed).
+
+    Shows every object as part of overlapping histograms.
+    """
+    print("[Plot 18] Edge strength distribution (detected vs missed)...")
+
+    if df_obj.empty or "object_edge_strength" not in df_obj.columns:
+        print("  No object_edge_strength data. Skipping.")
+        return
+
+    df = df_obj[df_obj["object_edge_strength"].notna()].copy()
+    if len(df) < 20:
+        print("  Too few objects. Skipping.")
+        return
+
+    detected = df[df["detected"] == True]["object_edge_strength"]
+    missed = df[df["detected"] == False]["object_edge_strength"]
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    x_max = df["object_edge_strength"].quantile(0.99)
+    bins = np.linspace(0, x_max, 50)
+
+    ax.hist(detected, bins=bins, alpha=0.6, color="#4CAF50",
+            label=f"Detected (n={len(detected)})",
+            edgecolor="white", linewidth=0.5)
+    ax.hist(missed, bins=bins, alpha=0.6, color="#F44336",
+            label=f"Missed (n={len(missed)})",
+            edgecolor="white", linewidth=0.5)
+
+    # Add median lines (staggered vertically to avoid overlap)
+    y_top = ax.get_ylim()[1]
+    for i, (vals, color, grp) in enumerate([(detected, "#2E7D32", "Detected"),
+                                             (missed, "#C62828", "Missed")]):
+        med = vals.median()
+        ax.axvline(med, color=color, linestyle="-", linewidth=2, alpha=0.8)
+        y_pos = y_top * (0.92 - i * 0.08)
+        ax.text(med + (x_max * 0.01), y_pos, f"{grp} median={med:.1f}",
+                color=color, fontsize=9, fontweight="bold")
+
+    ax.set_xlabel("Mean Sobel Magnitude (higher = crisper edges)")
+    ax.set_ylabel("Number of Objects")
+    ax.set_title(
+        f"Distribution of Edge Strength -- {modality.capitalize()}",
+        fontsize=14)
+    ax.legend(fontsize=10)
+    ax.grid(axis="y", alpha=0.2)
+    fig.tight_layout()
+    save_plot(fig, f"18_edge_strength_distribution_{modality}")
+
+
 def generate_eval_plots(modality: str):
     """Generate all evaluation-related plots."""
     df_img, df_obj, df_sub = load_eval_results(modality)
@@ -956,6 +1126,9 @@ def generate_eval_plots(modality: str):
     plot_detection_by_contrast(df_obj, modality)
     plot_detection_by_blur(df_obj, modality)
     plot_quality_dashboard(df_obj, modality)
+    plot_contrast_distribution(df_obj, modality)
+    plot_sharpness_distribution(df_obj, modality)
+    plot_edge_strength_distribution(df_obj, modality)
 
 
 # =============================================================================
