@@ -710,7 +710,11 @@ def plot_eval_dashboard(df_img: pd.DataFrame, df_obj: pd.DataFrame,
 
 
 def plot_detection_by_contrast(df_obj: pd.DataFrame, modality: str):
-    """Plot 13: detection rate by foreground-background contrast."""
+    """Plot 13: detection rate by foreground-background contrast.
+
+    FG-BG difference = how much brighter/darker the person is compared
+    to the surrounding background.  Higher = person stands out more.
+    """
     print("[Plot 13] Detection rate by FG-BG contrast...")
 
     if df_obj.empty or "fg_bg_diff" not in df_obj.columns:
@@ -724,9 +728,7 @@ def plot_detection_by_contrast(df_obj: pd.DataFrame, modality: str):
 
     try:
         df["contrast_bin"] = pd.qcut(
-            df["fg_bg_diff"], q=4,
-            labels=["Q1 (low)", "Q2", "Q3", "Q4 (high)"],
-            duplicates="drop",
+            df["fg_bg_diff"], q=8, duplicates="drop",
         )
     except ValueError:
         print("  Cannot bin fg_bg_diff (insufficient variation). Skipping.")
@@ -734,38 +736,45 @@ def plot_detection_by_contrast(df_obj: pd.DataFrame, modality: str):
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
-    # Left: recall by quartile
-    bin_order = ["Q1 (low)", "Q2", "Q3", "Q4 (high)"]
-    recalls = []
-    counts = []
-    for b in bin_order:
-        sub = df[df["contrast_bin"] == b]
-        counts.append(len(sub))
-        recalls.append(sub["detected"].mean() if len(sub) > 0 else 0)
+    # Left: detection rate vs contrast (scatter + trend)
+    bin_stats = (df.groupby("contrast_bin")["detected"]
+                 .agg(["mean", "count"]).reset_index())
+    midpoints = [interval.mid for interval in bin_stats["contrast_bin"]]
+    recalls = bin_stats["mean"].tolist()
 
-    colors = ["#F44336", "#FF9800", "#FFC107", "#4CAF50"]
-    bars = axes[0].bar(bin_order, recalls, color=colors, edgecolor="black")
-    axes[0].set_ylabel("Recall")
+    axes[0].scatter(midpoints, recalls, s=60, c="#2196F3", alpha=0.8,
+                    edgecolors="black", linewidths=0.5, zorder=3)
+
+    if len(midpoints) > 2:
+        z = np.polyfit(midpoints, recalls, deg=1)
+        p = np.poly1d(z)
+        x_line = np.linspace(min(midpoints), max(midpoints), 100)
+        axes[0].plot(x_line, p(x_line), "--", color="#F44336", linewidth=1.5,
+                     alpha=0.7, label=f"trend (slope={z[0]:.4f})")
+        axes[0].legend(fontsize=9)
+
+    axes[0].set_xlabel("FG-BG Brightness Difference\n(higher = person stands out more)")
+    axes[0].set_ylabel("Detection Rate")
     axes[0].set_ylim(0, 1.05)
-    axes[0].set_title("Recall by FG-BG Contrast Quartile", fontsize=13)
-    axes[0].grid(axis="y", alpha=0.3)
-    for bar, r, c in zip(bars, recalls, counts):
-        axes[0].text(bar.get_x() + bar.get_width() / 2,
-                     r + 0.02, f"{r:.3f}\n(n={c})",
-                     ha="center", fontsize=9)
+    axes[0].set_title("Detection Rate vs Object-Background Contrast", fontsize=13)
+    axes[0].grid(True, alpha=0.3)
 
-    # Right: boxplot detected vs missed
+    # Right: average contrast for detected vs missed objects
     detected_vals = df[df["detected"] == True]["fg_bg_diff"]
     missed_vals = df[df["detected"] == False]["fg_bg_diff"]
-    bp = axes[1].boxplot(
-        [detected_vals.dropna(), missed_vals.dropna()],
-        labels=["Detected", "Missed"],
-        patch_artist=True,
-    )
-    bp["boxes"][0].set_facecolor("#4CAF50")
-    bp["boxes"][1].set_facecolor("#F44336")
-    axes[1].set_ylabel("FG-BG Brightness Difference")
-    axes[1].set_title("Contrast Distribution: Detected vs Missed", fontsize=13)
+    means = [detected_vals.mean(), missed_vals.mean()]
+    labels = [f"Detected\n(n={len(detected_vals)})",
+              f"Missed\n(n={len(missed_vals)})"]
+    colors = ["#4CAF50", "#F44336"]
+    bars = axes[1].bar(labels, means, color=colors, edgecolor="black",
+                       alpha=0.85)
+    for bar, m in zip(bars, means):
+        axes[1].text(bar.get_x() + bar.get_width() / 2,
+                     m + 0.5, f"mean={m:.1f}",
+                     ha="center", fontsize=10)
+    axes[1].set_ylim(0, max(means) * 1.25)
+    axes[1].set_ylabel("Avg FG-BG Brightness Difference")
+    axes[1].set_title("Average Contrast: Detected vs Missed", fontsize=13)
     axes[1].grid(axis="y", alpha=0.3)
 
     fig.suptitle(
@@ -776,7 +785,11 @@ def plot_detection_by_contrast(df_obj: pd.DataFrame, modality: str):
 
 
 def plot_detection_by_blur(df_obj: pd.DataFrame, modality: str):
-    """Plot 14: detection rate by object blur (Laplacian variance)."""
+    """Plot 14: detection rate by object sharpness.
+
+    Laplacian variance measures how sharp/blurry the object region is.
+    Higher value = sharper and more detailed.  Lower = blurry.
+    """
     print("[Plot 14] Detection rate by object blur/sharpness...")
 
     if df_obj.empty or "object_blur" not in df_obj.columns:
@@ -790,9 +803,7 @@ def plot_detection_by_blur(df_obj: pd.DataFrame, modality: str):
 
     try:
         df["blur_bin"] = pd.qcut(
-            df["object_blur"], q=4,
-            labels=["Q1 (blurry)", "Q2", "Q3", "Q4 (sharp)"],
-            duplicates="drop",
+            df["object_blur"], q=8, duplicates="drop",
         )
     except ValueError:
         print("  Cannot bin object_blur (insufficient variation). Skipping.")
@@ -800,38 +811,45 @@ def plot_detection_by_blur(df_obj: pd.DataFrame, modality: str):
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
-    # Left: recall by blur quartile
-    bin_order = ["Q1 (blurry)", "Q2", "Q3", "Q4 (sharp)"]
-    recalls = []
-    counts = []
-    for b in bin_order:
-        sub = df[df["blur_bin"] == b]
-        counts.append(len(sub))
-        recalls.append(sub["detected"].mean() if len(sub) > 0 else 0)
+    # Left: detection rate vs sharpness (scatter + trend)
+    bin_stats = (df.groupby("blur_bin")["detected"]
+                 .agg(["mean", "count"]).reset_index())
+    midpoints = [interval.mid for interval in bin_stats["blur_bin"]]
+    recalls = bin_stats["mean"].tolist()
 
-    colors = ["#F44336", "#FF9800", "#FFC107", "#4CAF50"]
-    bars = axes[0].bar(bin_order, recalls, color=colors, edgecolor="black")
-    axes[0].set_ylabel("Recall")
+    axes[0].scatter(midpoints, recalls, s=60, c="#2196F3", alpha=0.8,
+                    edgecolors="black", linewidths=0.5, zorder=3)
+
+    if len(midpoints) > 2:
+        z = np.polyfit(midpoints, recalls, deg=1)
+        p = np.poly1d(z)
+        x_line = np.linspace(min(midpoints), max(midpoints), 100)
+        axes[0].plot(x_line, p(x_line), "--", color="#F44336", linewidth=1.5,
+                     alpha=0.7, label=f"trend (slope={z[0]:.4f})")
+        axes[0].legend(fontsize=9)
+
+    axes[0].set_xlabel("Laplacian Variance\n(higher = sharper, lower = blurrier)")
+    axes[0].set_ylabel("Detection Rate")
     axes[0].set_ylim(0, 1.05)
-    axes[0].set_title("Recall by Sharpness Quartile", fontsize=13)
-    axes[0].grid(axis="y", alpha=0.3)
-    for bar, r, c in zip(bars, recalls, counts):
-        axes[0].text(bar.get_x() + bar.get_width() / 2,
-                     r + 0.02, f"{r:.3f}\n(n={c})",
-                     ha="center", fontsize=9)
+    axes[0].set_title("Detection Rate vs Object Sharpness", fontsize=13)
+    axes[0].grid(True, alpha=0.3)
 
-    # Right: boxplot detected vs missed
+    # Right: average sharpness for detected vs missed objects
     detected_vals = df[df["detected"] == True]["object_blur"]
     missed_vals = df[df["detected"] == False]["object_blur"]
-    bp = axes[1].boxplot(
-        [detected_vals.dropna(), missed_vals.dropna()],
-        labels=["Detected", "Missed"],
-        patch_artist=True,
-    )
-    bp["boxes"][0].set_facecolor("#4CAF50")
-    bp["boxes"][1].set_facecolor("#F44336")
-    axes[1].set_ylabel("Laplacian Variance (higher = sharper)")
-    axes[1].set_title("Sharpness Distribution: Detected vs Missed", fontsize=13)
+    means = [detected_vals.mean(), missed_vals.mean()]
+    labels = [f"Detected\n(n={len(detected_vals)})",
+              f"Missed\n(n={len(missed_vals)})"]
+    colors = ["#4CAF50", "#F44336"]
+    bars = axes[1].bar(labels, means, color=colors, edgecolor="black",
+                       alpha=0.85)
+    for bar, m in zip(bars, means):
+        axes[1].text(bar.get_x() + bar.get_width() / 2,
+                     m + 2, f"mean={m:.1f}",
+                     ha="center", fontsize=10)
+    axes[1].set_ylim(0, max(means) * 1.25)
+    axes[1].set_ylabel("Avg Laplacian Variance (sharpness)")
+    axes[1].set_title("Average Sharpness: Detected vs Missed", fontsize=13)
     axes[1].grid(axis="y", alpha=0.3)
 
     fig.suptitle(
@@ -862,13 +880,17 @@ def plot_quality_dashboard(df_obj: pd.DataFrame, modality: str):
 
     panels = [
         (axes[0, 0], "fg_bg_diff",
-         "FG-BG Contrast", "FG-BG Brightness Difference"),
+         "FG-BG Contrast",
+         "Brightness Difference (higher = person stands out more)"),
         (axes[0, 1], "object_blur",
-         "Sharpness (Laplacian Var)", "Laplacian Variance"),
+         "Sharpness",
+         "Laplacian Variance (higher = sharper image)"),
         (axes[1, 0], "object_edge_strength",
-         "Edge Strength", "Mean Sobel Magnitude"),
+         "Edge Strength",
+         "Mean Sobel Magnitude (higher = crisper edges)"),
         (axes[1, 1], "object_brightness",
-         "Object Brightness", "Mean Pixel Intensity"),
+         "Object Brightness",
+         "Mean Pixel Intensity (0=black, 255=white)"),
     ]
 
     for ax, col, title, xlabel in panels:
@@ -885,11 +907,9 @@ def plot_quality_dashboard(df_obj: pd.DataFrame, modality: str):
 
         midpoints = [interval.mid for interval in bin_stats[f"{col}_bin"]]
         recalls = bin_stats["mean"].tolist()
-        counts = bin_stats["count"].tolist()
 
-        sizes = [max(30, c * 2) for c in counts]
-        ax.scatter(midpoints, recalls, s=sizes, c="#2196F3", alpha=0.7,
-                   edgecolors="black", linewidths=0.5)
+        ax.scatter(midpoints, recalls, s=50, c="#2196F3", alpha=0.8,
+                   edgecolors="black", linewidths=0.5, zorder=3)
 
         if len(midpoints) > 2:
             z = np.polyfit(midpoints, recalls, deg=1)
@@ -904,10 +924,6 @@ def plot_quality_dashboard(df_obj: pd.DataFrame, modality: str):
         ax.set_ylim(0, 1.05)
         ax.set_title(title, fontsize=13)
         ax.grid(True, alpha=0.3)
-
-        for mx, ry, cnt in zip(midpoints, recalls, counts):
-            ax.annotate(f"n={cnt}", (mx, ry), textcoords="offset points",
-                        xytext=(0, 8), fontsize=7, ha="center")
 
     fig.suptitle(
         f"Image Quality vs Detection -- {modality.capitalize()}",
