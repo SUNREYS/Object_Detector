@@ -1102,6 +1102,86 @@ def plot_edge_strength_distribution(df_obj: pd.DataFrame, modality: str):
     save_plot(fig, f"18_edge_strength_distribution_{modality}")
 
 
+def plot_size_vs_quality(df_obj: pd.DataFrame, modality: str):
+    """Plot 19: 2x2 dashboard — bbox height vs each quality feature.
+
+    Shows how object size (distance from camera) relates to contrast,
+    sharpness, edge strength, and brightness.  Each dot = one bin of
+    objects grouped by height; colour = detected (green) / missed (red).
+    """
+    print("[Plot 19] Bbox size vs image quality features...")
+
+    required = ["bbox_height_px", "fg_bg_diff", "object_blur",
+                "object_edge_strength", "object_brightness", "detected"]
+    if df_obj.empty or not all(c in df_obj.columns for c in required):
+        print("  Missing required columns. Skipping.")
+        return
+
+    df = df_obj.dropna(subset=required).copy()
+    if len(df) < 40:
+        print("  Too few objects. Skipping.")
+        return
+
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+    panels = [
+        (axes[0, 0], "fg_bg_diff",
+         "FG-BG Contrast",
+         "Brightness Difference"),
+        (axes[0, 1], "object_blur",
+         "Sharpness",
+         "Laplacian Variance"),
+        (axes[1, 0], "object_edge_strength",
+         "Edge Strength",
+         "Mean Sobel Magnitude"),
+        (axes[1, 1], "object_brightness",
+         "Brightness",
+         "Mean Pixel Intensity"),
+    ]
+
+    n_bins = 12
+    try:
+        df["height_bin"] = pd.qcut(df["bbox_height_px"], q=n_bins,
+                                   duplicates="drop")
+    except ValueError:
+        print("  Cannot bin bbox_height_px. Skipping.")
+        return
+
+    for ax, col, title, ylabel in panels:
+        for det_val, color, label in [(True, "#4CAF50", "Detected"),
+                                       (False, "#F44336", "Missed")]:
+            sub = df[df["detected"] == det_val]
+            if len(sub) < 5:
+                continue
+            stats = (sub.groupby("height_bin")[col]
+                     .agg(["mean", "count"]).reset_index())
+            midpoints = [interval.mid for interval in stats["height_bin"]]
+            means = stats["mean"].tolist()
+
+            ax.scatter(midpoints, means, s=50, c=color, alpha=0.7,
+                       edgecolors="black", linewidths=0.5, zorder=3,
+                       label=label)
+
+            if len(midpoints) > 2:
+                z = np.polyfit(midpoints, means, deg=1)
+                p = np.poly1d(z)
+                x_line = np.linspace(min(midpoints), max(midpoints), 100)
+                ax.plot(x_line, p(x_line), "--", color=color, linewidth=1.5,
+                        alpha=0.6)
+
+        ax.set_xlabel("Bounding Box Height (px)\n(taller = closer to camera)")
+        ax.set_ylabel(ylabel)
+        ax.set_title(f"{title} vs Object Size", fontsize=13)
+        ax.legend(fontsize=9)
+        ax.grid(True, alpha=0.3)
+
+    fig.suptitle(
+        f"Object Size vs Image Quality -- {modality.capitalize()}",
+        fontsize=16, y=1.02)
+    fig.tight_layout()
+    save_plot(fig, f"19_size_vs_quality_{modality}")
+
+
 def generate_eval_plots(modality: str):
     """Generate all evaluation-related plots."""
     df_img, df_obj, df_sub = load_eval_results(modality)
@@ -1129,6 +1209,7 @@ def generate_eval_plots(modality: str):
     plot_contrast_distribution(df_obj, modality)
     plot_sharpness_distribution(df_obj, modality)
     plot_edge_strength_distribution(df_obj, modality)
+    plot_size_vs_quality(df_obj, modality)
 
 
 # =============================================================================

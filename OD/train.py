@@ -33,7 +33,6 @@ import shutil
 
 import pandas as pd
 from ultralytics import YOLO
-from ultralytics.utils.callbacks import Callbacks
 
 
 # =============================================================================
@@ -80,11 +79,10 @@ HYPERPARAMS = {
 # EPOCH TRACKING CALLBACK
 # =============================================================================
 
-class BestEpochCallback(Callbacks):
-    """Print the current best epoch after each training epoch."""
+class BestEpochCallback:
+    """Print current and best epoch info after every training epoch."""
 
     def __init__(self, run_dir: str):
-        super().__init__()
         self.run_dir = run_dir
         self.results_csv = os.path.join(run_dir, "results.csv")
         self.last_best_epoch = None
@@ -101,21 +99,24 @@ class BestEpochCallback(Callbacks):
             if "metrics/mAP50(B)" not in df.columns:
                 return
 
+            current_epoch = len(df)
+            current_map50 = df["metrics/mAP50(B)"].iloc[-1]
+
             best_idx = df["metrics/mAP50(B)"].idxmax()
             best_epoch = best_idx + 1
             best_map50 = df["metrics/mAP50(B)"].iloc[best_idx]
-            current_epoch = len(df)
 
-            if best_epoch != self.last_best_epoch:
-                print(
-                    f"\n>>> Epoch {current_epoch}/{trainer.epochs} — "
-                    f"NEW BEST: Epoch {best_epoch} (mAP50: {best_map50:.4f})\n"
-                )
-                self.last_best_epoch = best_epoch
-            # else: silently continue if best hasn't changed
+            is_new_best = best_epoch != self.last_best_epoch
+            self.last_best_epoch = best_epoch
 
-        except Exception as e:
-            # Silently skip if CSV is corrupted or incomplete
+            marker = " << NEW BEST" if is_new_best else ""
+            print(
+                f"\n>>> Epoch {current_epoch}/{trainer.epochs} — "
+                f"mAP50: {current_map50:.4f} | "
+                f"Best: Epoch {best_epoch} (mAP50: {best_map50:.4f}){marker}\n"
+            )
+
+        except Exception:
             pass
 
 
@@ -167,6 +168,7 @@ def train(modality: str = "visible", resume: bool = False,
     # Create callback to track best epoch
     run_dir = os.path.join(RUNS_DIR, run_name)
     callback = BestEpochCallback(run_dir)
+    model.add_callback("on_train_epoch_end", callback.on_train_epoch_end)
 
     # Train
     results = model.train(
@@ -176,7 +178,6 @@ def train(modality: str = "visible", resume: bool = False,
         exist_ok=True,
         save=True,
         plots=True,
-        callbacks=[callback],
         **HYPERPARAMS,
     )
 
