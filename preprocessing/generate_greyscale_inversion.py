@@ -13,6 +13,7 @@ Annotations are shared across modalities, so only images need to be created.
 
 Usage:
     python preprocessing/generate_greyscale_inversion.py
+    train: docker compose up train-greyscale-inversion
 =============================================================================
 """
 
@@ -54,6 +55,7 @@ def generate():
 
             img = Image.open(src_path).convert("L")
             inverted = ImageOps.invert(img)
+            inverted = ImageOps.autocontrast(inverted)
             inverted.save(dst_path, quality=95)
             total += 1
 
