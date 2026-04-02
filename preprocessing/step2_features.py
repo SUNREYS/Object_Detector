@@ -44,6 +44,7 @@ from config import (
     SIZE_SMALL_MAX, SIZE_MEDIUM_MAX,
     OVERLAP_IOU_THRESHOLD,
     OUTPUT_IMAGES_VISIBLE,
+    MODALITY_IMAGE_DIRS,
 )
 from utils import compute_iou
 
@@ -360,9 +361,14 @@ def extract_object_features(obj: Dict, all_objects: List[Dict]) -> Dict:
 #   Combine image-level and object-level features into a single record.
 # =============================================================================
 
-def extract_frame_features(frame_result: Dict) -> Dict:
+def extract_frame_features(frame_result: Dict, img_dir: str = None) -> Dict:
     """
     Extract all analysis features for a processed frame.
+
+    Args:
+        img_dir: If provided, pixel-level features (brightness, contrast,
+                 edge_density) are computed from images in this directory.
+                 Falls back to ``visible_path`` when None.
 
     Args:
         frame_result: Dict output from step1 process_frame().
@@ -373,8 +379,16 @@ def extract_frame_features(frame_result: Dict) -> Dict:
     objects = frame_result.get("objects", [])
     set_id = frame_result.get("set_id", "")
 
-    # Image-level features (use visible image for analysis)
-    vis_path = frame_result.get("visible_path", "")
+    # Image-level features — use the caller-specified modality directory,
+    # or fall back to the visible image path stored by Step 1.
+    if img_dir is not None:
+        vis_path = os.path.join(
+            img_dir,
+            frame_result.get("split", ""),
+            frame_result.get("flat_name", "") + ".jpg",
+        )
+    else:
+        vis_path = frame_result.get("visible_path", "")
 
     features = {
         "frame_id": frame_result["frame_id"],
@@ -418,12 +432,20 @@ def extract_frame_features(frame_result: Dict) -> Dict:
 #   Run feature extraction on all processed frames.
 # =============================================================================
 
-def run_step2(frame_results: List[Dict]) -> List[Dict]:
+def run_step2(frame_results: List[Dict], modality: str = "visible",
+              split_filter: str = "val") -> List[Dict]:
     """
     Execute Step 2: extract features for all frames.
 
     Args:
-        frame_results: List of result dicts from Step 1.
+        frame_results:  List of result dicts from Step 1.
+        modality:       Which modality's images to use for pixel-level features
+                        (brightness, contrast, edge_density).  Must be a key in
+                        ``MODALITY_IMAGE_DIRS``.  Defaults to ``"visible"``.
+        split_filter:   Only process frames belonging to this split
+                        (``"val"``, ``"train"``, or ``None`` for all).
+                        Defaults to ``"val"`` because evaluation only uses
+                        the validation set.
 
     Returns:
         List of feature dicts, one per frame.
@@ -434,12 +456,24 @@ def run_step2(frame_results: List[Dict]) -> List[Dict]:
     print("STEP 2: FEATURE EXTRACTION FOR ANALYSIS")
     print("=" * 70)
 
+    img_dir = MODALITY_IMAGE_DIRS.get(modality)
+    if img_dir is None:
+        print(f"  WARNING: Unknown modality '{modality}', falling back to visible images.")
+        img_dir = MODALITY_IMAGE_DIRS["visible"]
+    print(f"[Step 2] Using images from: {img_dir}")
+    if split_filter:
+        print(f"[Step 2] Processing split: '{split_filter}' only")
+
     all_features = []
-    valid_results = [r for r in frame_results if not r.get("skipped", False)]
+    valid_results = [
+        r for r in frame_results
+        if not r.get("skipped", False)
+        and (split_filter is None or r.get("split") == split_filter)
+    ]
 
     print(f"[Step 2] Extracting features from {len(valid_results)} frames...")
     for result in tqdm(valid_results, desc="  Extracting features", unit="frame"):
-        features = extract_frame_features(result)
+        features = extract_frame_features(result, img_dir=img_dir)
         all_features.append(features)
 
     # Summary

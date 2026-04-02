@@ -384,27 +384,41 @@ def run_evaluation(
     print(f"Found {len(img_files)} validation images in {val_img_dir}")
 
     # --- Load preprocessing metadata ---
+    # Try to use the exact modality.  If no rows exist in the CSVs for that
+    # modality (e.g. greyscale_inversion was never processed by the pipeline),
+    # fall back to 'visible', whose set IDs and annotation labels are identical.
+    def _pick_meta_modality(df: pd.DataFrame, target: str) -> str:
+        if target in df["modality"].values:
+            return target
+        fallback = "visible"
+        print(f"  NOTE: no metadata rows for '{target}'; "
+              f"falling back to '{fallback}' (same KAIST set IDs / labels).")
+        return fallback
+
     frame_meta: Dict[str, Dict] = {}
     if os.path.exists(FRAME_METADATA_CSV):
         df_fm = pd.read_csv(FRAME_METADATA_CSV)
+        meta_modality = _pick_meta_modality(df_fm, modality)
         df_fm = df_fm[
-            (df_fm["modality"] == modality) & (df_fm["split"] == "val")
+            (df_fm["modality"] == meta_modality) & (df_fm["split"] == "val")
         ]
         frame_meta = {
             row["flat_name"]: row.to_dict() for _, row in df_fm.iterrows()
         }
-        print(f"Loaded frame metadata: {len(frame_meta)} entries")
+        print(f"Loaded frame metadata: {len(frame_meta)} entries "
+              f"(modality='{meta_modality}')")
 
     object_meta: Dict[str, List[Dict]] = {}
     if os.path.exists(OBJECT_METADATA_CSV):
         df_om = pd.read_csv(OBJECT_METADATA_CSV)
+        meta_modality_obj = _pick_meta_modality(df_om, modality)
         df_om = df_om[
-            (df_om["modality"] == modality) & (df_om["split"] == "val")
+            (df_om["modality"] == meta_modality_obj) & (df_om["split"] == "val")
         ]
         for flat_name, group in df_om.groupby("flat_name"):
             object_meta[flat_name] = group.to_dict("records")
         print(f"Loaded object metadata: {len(df_om)} objects across "
-              f"{len(object_meta)} frames")
+              f"{len(object_meta)} frames (modality='{meta_modality_obj}')")
 
     # --- Run predictions & evaluate ---
     print(f"\nRunning predictions (conf={conf}, iou_thresh={IOU_THRESHOLD})...")

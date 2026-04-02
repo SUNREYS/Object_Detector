@@ -21,8 +21,9 @@ Step 4: EXPORT ALL METADATA TO CSV FILES
 
 import os
 import csv
+import pandas as pd
 from collections import defaultdict
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 from config import OUTPUT_METADATA
 
@@ -50,41 +51,52 @@ FRAME_CSV_COLUMNS = [
 ]
 
 
-def export_frame_metadata(all_features: List[Dict]) -> str:
+def export_frame_metadata(all_features: List[Dict], modalities: Optional[List[str]] = None) -> str:
     """
     Export frame-level metadata to CSV.
-    Writes two rows per frame: one for visible, one for thermal.
-    Both share identical annotation metadata (same scene, same bboxes).
-    Only the modality and image path differ.
+
+    Writes one row per (frame × modality).  If the CSV already exists and
+    ``modalities`` contains only a subset (e.g. ``["greyscale_inversion"]``),
+    the existing rows for OTHER modalities are preserved (upsert behaviour).
 
     Args:
-        all_features: List of feature dicts from Step 2 (enriched in Step 3).
+        all_features: List of feature dicts from Step 2.
+        modalities:   Which modalities to write rows for.  Defaults to
+                      ``["visible", "thermal"]`` (original behaviour).
 
     Returns:
         Path to the output CSV file.
     """
-    print("[Step 4.1] Exporting frame-level metadata to CSV...")
-    print("  (Duplicating rows for visible + thermal — same annotations)")
+    if modalities is None:
+        modalities = ["visible", "thermal"]
+
+    print(f"[Step 4.1] Exporting frame-level metadata for {modalities}...")
+
+    new_rows = []
+    for feat in all_features:
+        base = {col: feat.get(col, "") for col in FRAME_CSV_COLUMNS}
+        for m in modalities:
+            row = dict(base)
+            row["modality"] = m
+            new_rows.append(row)
 
     path = os.path.join(OUTPUT_METADATA, "frame_metadata.csv")
-    row_count = 0
 
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=FRAME_CSV_COLUMNS, extrasaction="ignore")
-        writer.writeheader()
-        for feat in all_features:
-            # Write visible row
-            row = {col: feat.get(col, "") for col in FRAME_CSV_COLUMNS}
-            row["modality"] = "visible"
-            writer.writerow(row)
-            row_count += 1
+    if os.path.exists(path):
+        df_existing = pd.read_csv(path, dtype=str)
+        df_existing = df_existing[~df_existing["modality"].isin(modalities)]
+        df_new = pd.DataFrame(new_rows, columns=FRAME_CSV_COLUMNS).astype(str)
+        df_combined = pd.concat([df_existing, df_new], ignore_index=True)
+        df_combined.to_csv(path, index=False)
+        print(f"  Upserted {len(df_new)} rows → {len(df_combined)} total rows in: {path}")
+    else:
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=FRAME_CSV_COLUMNS, extrasaction="ignore")
+            writer.writeheader()
+            for row in new_rows:
+                writer.writerow(row)
+        print(f"  Wrote {len(new_rows)} rows to: {path}")
 
-            # Write thermal row (identical metadata, different modality)
-            row["modality"] = "thermal"
-            writer.writerow(row)
-            row_count += 1
-
-    print(f"  Wrote {row_count} rows ({row_count // 2} frames x 2 modalities) to: {path}")
     return path
 
 
@@ -116,43 +128,52 @@ OBJECT_CSV_COLUMNS = [
 ]
 
 
-def export_object_metadata(all_features: List[Dict]) -> str:
+def export_object_metadata(all_features: List[Dict], modalities: Optional[List[str]] = None) -> str:
     """
     Export per-object metadata to CSV.
-    Writes two rows per object: one for visible, one for thermal.
-    Annotations are identical for both modalities (same aligned scene).
+
+    Writes one row per (object × modality).  If the CSV already exists and
+    ``modalities`` is a subset, existing rows for other modalities are kept.
 
     Args:
         all_features: List of feature dicts from Step 2.
+        modalities:   Which modalities to write rows for.  Defaults to
+                      ``["visible", "thermal"]``.
 
     Returns:
         Path to the output CSV file.
     """
-    print("[Step 4.2] Exporting object-level metadata to CSV...")
-    print("  (Duplicating rows for visible + thermal — same annotations)")
+    if modalities is None:
+        modalities = ["visible", "thermal"]
+
+    print(f"[Step 4.2] Exporting object-level metadata for {modalities}...")
+
+    new_rows = []
+    for feat in all_features:
+        for obj_feat in feat.get("object_features", []):
+            base = {col: obj_feat.get(col, "") for col in OBJECT_CSV_COLUMNS}
+            for m in modalities:
+                row = dict(base)
+                row["modality"] = m
+                new_rows.append(row)
 
     path = os.path.join(OUTPUT_METADATA, "object_metadata.csv")
-    total_rows = 0
 
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=OBJECT_CSV_COLUMNS, extrasaction="ignore")
-        writer.writeheader()
-
-        for feat in all_features:
-            for obj_feat in feat.get("object_features", []):
-                row = {col: obj_feat.get(col, "") for col in OBJECT_CSV_COLUMNS}
-
-                # Write visible row
-                row["modality"] = "visible"
+    if os.path.exists(path):
+        df_existing = pd.read_csv(path, dtype=str)
+        df_existing = df_existing[~df_existing["modality"].isin(modalities)]
+        df_new = pd.DataFrame(new_rows, columns=OBJECT_CSV_COLUMNS).astype(str)
+        df_combined = pd.concat([df_existing, df_new], ignore_index=True)
+        df_combined.to_csv(path, index=False)
+        print(f"  Upserted {len(df_new)} rows → {len(df_combined)} total rows in: {path}")
+    else:
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=OBJECT_CSV_COLUMNS, extrasaction="ignore")
+            writer.writeheader()
+            for row in new_rows:
                 writer.writerow(row)
-                total_rows += 1
+        print(f"  Wrote {len(new_rows)} rows to: {path}")
 
-                # Write thermal row (identical)
-                row["modality"] = "thermal"
-                writer.writerow(row)
-                total_rows += 1
-
-    print(f"  Wrote {total_rows} rows ({total_rows // 2} objects x 2 modalities) to: {path}")
     return path
 
 
@@ -369,12 +390,14 @@ def export_crowd_analysis(all_features: List[Dict]) -> str:
 # Step 4.6: MAIN ENTRY POINT
 # =============================================================================
 
-def run_step4(all_features: List[Dict]) -> Dict[str, str]:
+def run_step4(all_features: List[Dict], modalities: Optional[List[str]] = None) -> Dict[str, str]:
     """
     Execute Step 4: export all metadata to CSV files.
 
     Args:
         all_features: List of feature dicts from Steps 2-3.
+        modalities:   Which modalities to write rows for.  Defaults to
+                      ``["visible", "thermal"]``.
 
     Returns:
         Dict mapping CSV name to file path.
@@ -386,8 +409,8 @@ def run_step4(all_features: List[Dict]) -> Dict[str, str]:
     os.makedirs(OUTPUT_METADATA, exist_ok=True)
 
     outputs = {}
-    outputs["frame_metadata"] = export_frame_metadata(all_features)
-    outputs["object_metadata"] = export_object_metadata(all_features)
+    outputs["frame_metadata"] = export_frame_metadata(all_features, modalities=modalities)
+    outputs["object_metadata"] = export_object_metadata(all_features, modalities=modalities)
     outputs["dataset_summary"] = export_dataset_summary(all_features)
     outputs["size_distribution"] = export_size_distribution(all_features)
     outputs["crowd_analysis"] = export_crowd_analysis(all_features)

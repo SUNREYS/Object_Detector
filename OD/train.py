@@ -4,17 +4,19 @@ YOLOv8 Training Script for KAIST Pedestrian Detection
 =============================================================================
 
 Trains a YOLOv8n model on the preprocessed KAIST visible-light (or thermal)
-images. Hyperparameters were optimized with Optuna. Early stopping is enabled
-with patience=15.
+images. Hyperparameters can be optimised with the built-in Optuna search
+(--tune), then used directly for a full 800-epoch run.
 
 After training completes, weights are copied with epoch numbers:
     best_{epoch}.pt  -- weights from the best-performing epoch (by mAP50)
     last_{epoch}.pt  -- weights from the final training epoch
 
 Usage:
-    python train.py                         # Train on visible images
-    python train.py --modality thermal      # Train on thermal images
-    python train.py --resume                # Resume interrupted training
+    python train.py                                   # Train on visible
+    python train.py --modality greyscale_inversion    # Train on greyscale
+    python train.py --resume                          # Resume training
+    python train.py --tune                            # Optuna search (50 trials)
+    python train.py --tune --trials 100 --tune-epochs 20  # Custom search
 
 Output:
     OD/runs/kaist_{modality}/
@@ -28,10 +30,13 @@ Output:
 """
 
 import argparse
+import json
 import os
 import shutil
+import tempfile
 
 import pandas as pd
+import yaml
 from ultralytics import YOLO
 
 
@@ -62,10 +67,13 @@ RUNS_DIR = os.path.join(SCRIPT_DIR, "runs")
 # =============================================================================
 
 HYPERPARAMS = {
-    "epochs": 15,
-    "patience": 15,
+    "epochs": 800,
+    "patience": 10,
     "imgsz": 512,
     "batch": 64,
+    "workers": 4,       # Windows DataLoader spawn is slow; 4 is optimal
+    "cache": "disk",     # ~41GB actual data fits in 42GB available RAM
+    "device": 0,        # Force GPU 0 explicitly, bypasses WDDM auto-select
     "lr0": 0.003175673197442611,
     "weight_decay": 0.00010299214204601986,
     "momentum": 0.9085426764391346,
@@ -79,43 +87,134 @@ HYPERPARAMS = {
 # EPOCH TRACKING CALLBACK
 # =============================================================================
 
+# =============================================================================
+# DATASET YAML HELPER
+# =============================================================================
+
+def _make_dataset_yaml(modality: str, data_yaml: str = None) -> str:
+    """
+    Return a path to a temp YAML whose 'path' field is set to the absolute
+    directory of the source YAML file, so Ultralytics resolves train/val
+    correctly regardless of the current working directory.
+    """
+    src = data_yaml if data_yaml else DATASET_YAML[modality]
+    with open(src, "r") as f:
+        cfg = yaml.safe_load(f)
+    cfg["path"] = str(os.path.dirname(os.path.abspath(src)))
+    tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False)
+    yaml.dump(cfg, tmp)
+    tmp.close()
+    return tmp.name
+
+
+# =============================================================================
+# GPU TEMPERATURE GUARD
+# =============================================================================
+
+GPU_TEMP_LIMIT = 75          # °C — training pauses above this
+GPU_TEMP_POLL_SECS = 5       # how long to wait between re-checks while hot
+
+
+class GpuTempCallback:
+    """
+    After every epoch, check GPU temperature via nvidia-smi.
+    If the GPU exceeds GPU_TEMP_LIMIT, print a warning and sleep in
+    GPU_TEMP_POLL_SECS-second intervals until it cools back down.
+    """
+
+    def _get_gpu_temp(self) -> int | None:
+        """Return current GPU 0 temperature in °C, or None if unavailable."""
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["nvidia-smi", "--query-gpu=temperature.gpu",
+                 "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, timeout=5
+            )
+            return int(result.stdout.strip().splitlines()[0])
+        except Exception:
+            return None
+
+    def on_train_epoch_end(self, trainer):
+        """Called after every training epoch."""
+        import time
+        temp = self._get_gpu_temp()
+        if temp is None:
+            return
+        if temp <= GPU_TEMP_LIMIT:
+            print(f"[GPU] {temp}°C — OK")
+            return
+        # Too hot — pause until cooled
+        print(f"\n[GPU] WARNING: {temp}°C exceeds limit of {GPU_TEMP_LIMIT}°C — "
+              f"pausing training to cool down...")
+        while True:
+            time.sleep(GPU_TEMP_POLL_SECS)
+            temp = self._get_gpu_temp()
+            if temp is None:
+                break
+            print(f"[GPU] {temp}°C — {'resuming.' if temp <= GPU_TEMP_LIMIT else 'still hot, waiting...'}")
+            if temp <= GPU_TEMP_LIMIT:
+                break
+
+
 class BestEpochCallback:
-    """Print current and best epoch info after every training epoch."""
+    """Print current and best epoch info and write training_log.csv after every epoch."""
 
     def __init__(self, run_dir: str):
         self.run_dir = run_dir
         self.results_csv = os.path.join(run_dir, "results.csv")
+        self.log_csv = os.path.join(run_dir, "training_log.csv")
         self.last_best_epoch = None
+        self.log_rows = []
 
     def on_train_epoch_end(self, trainer):
         """Called at the end of each training epoch."""
-        if not os.path.exists(self.results_csv):
-            return
+        epoch = trainer.epoch + 1  # trainer.epoch is 0-indexed
 
+        # --- Write our own incremental CSV from trainer state ---
         try:
-            df = pd.read_csv(self.results_csv)
+            row = {"epoch": epoch}
+            # Loss values
+            if hasattr(trainer, "loss_items") and trainer.loss_items is not None:
+                loss_names = getattr(trainer, "loss_names",
+                                     ["box_loss", "cls_loss", "dfl_loss"])
+                for name, val in zip(loss_names, trainer.loss_items):
+                    row[f"train/{name}"] = float(val)
+            # Val metrics (available one epoch behind on first call, but
+            # trainer.metrics is populated by on_val_end which fires before this)
+            if hasattr(trainer, "metrics") and trainer.metrics:
+                for k, v in trainer.metrics.items():
+                    row[k] = float(v) if v is not None else None
+            self.log_rows.append(row)
+            log_df = pd.DataFrame(self.log_rows)
+            log_df.to_csv(self.log_csv, index=False)
+        except Exception:
+            pass
+
+        # --- Print best-epoch summary (reads Ultralytics results.csv if present) ---
+        try:
+            src = self.results_csv if os.path.exists(self.results_csv) else self.log_csv
+            df = pd.read_csv(src)
             df.columns = [c.strip() for c in df.columns]
 
-            if "metrics/mAP50(B)" not in df.columns:
+            map_col = next((c for c in df.columns if "mAP50" in c and "95" not in c), None)
+            if map_col is None:
                 return
 
-            current_epoch = len(df)
-            current_map50 = df["metrics/mAP50(B)"].iloc[-1]
-
-            best_idx = df["metrics/mAP50(B)"].idxmax()
+            current_map50 = df[map_col].iloc[-1]
+            best_idx = df[map_col].idxmax()
             best_epoch = best_idx + 1
-            best_map50 = df["metrics/mAP50(B)"].iloc[best_idx]
+            best_map50 = df[map_col].iloc[best_idx]
 
             is_new_best = best_epoch != self.last_best_epoch
             self.last_best_epoch = best_epoch
 
             marker = " << NEW BEST" if is_new_best else ""
             print(
-                f"\n>>> Epoch {current_epoch}/{trainer.epochs} — "
+                f"\n>>> Epoch {epoch}/{trainer.epochs} — "
                 f"mAP50: {current_map50:.4f} | "
                 f"Best: Epoch {best_epoch} (mAP50: {best_map50:.4f}){marker}\n"
             )
-
         except Exception:
             pass
 
@@ -139,12 +238,13 @@ def train(modality: str = "visible", resume: bool = False,
     print("=" * 70)
 
     # Verify dataset config exists
-    yaml_path = data_yaml if data_yaml else DATASET_YAML[modality]
-    if not os.path.exists(yaml_path):
-        print(f"ERROR: Dataset config not found: {yaml_path}")
+    src_yaml = data_yaml if data_yaml else DATASET_YAML[modality]
+    if not os.path.exists(src_yaml):
+        print(f"ERROR: Dataset config not found: {src_yaml}")
         print("Run the preprocessing pipeline first (preprocessing/main.py)")
         return None
 
+    yaml_path = _make_dataset_yaml(modality, data_yaml)
     run_name = f"kaist_{modality}"
 
     # Load model (resume from checkpoint or start fresh)
@@ -165,10 +265,12 @@ def train(modality: str = "visible", resume: bool = False,
     for k, v in HYPERPARAMS.items():
         print(f"  {k}: {v}")
 
-    # Create callback to track best epoch
+    # Create callbacks
     run_dir = os.path.join(RUNS_DIR, run_name)
     callback = BestEpochCallback(run_dir)
     model.add_callback("on_train_epoch_end", callback.on_train_epoch_end)
+    gpu_guard = GpuTempCallback()
+    model.add_callback("on_train_epoch_end", gpu_guard.on_train_epoch_end)
 
     # Train
     results = model.train(
@@ -178,6 +280,7 @@ def train(modality: str = "visible", resume: bool = False,
         exist_ok=True,
         save=True,
         plots=True,
+        resume=resume,
         **HYPERPARAMS,
     )
 
@@ -186,6 +289,122 @@ def train(modality: str = "visible", resume: bool = False,
 
     print("\nTraining complete.")
     return results
+
+
+# =============================================================================
+# OPTUNA HYPERPARAMETER SEARCH
+# =============================================================================
+
+def optimize(modality: str = "visible", n_trials: int = 50,
+             tune_epochs: int = 30, data_yaml: str = None):
+    """
+    Run an Optuna study to find the best hyperparameters for the given modality.
+
+    Each trial trains for `tune_epochs` epochs and reports the best mAP50.
+    Results are saved to OD/runs/optuna_{modality}/.
+
+    Args:
+        modality:    Dataset modality (visible / thermal / greyscale_inversion)
+        n_trials:    Number of Optuna trials to run
+        tune_epochs: Epochs per trial (short runs, e.g. 20-50)
+        data_yaml:   Optional dataset YAML override
+    """
+    try:
+        import optuna
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+    except ImportError:
+        print("ERROR: optuna is not installed. Run: pip install optuna")
+        return None
+
+    src_yaml = data_yaml if data_yaml else DATASET_YAML[modality]
+    if not os.path.exists(src_yaml):
+        print(f"ERROR: Dataset config not found: {src_yaml}")
+        return None
+
+    yaml_path = _make_dataset_yaml(modality, data_yaml)
+    study_dir = os.path.join(RUNS_DIR, f"optuna_{modality}")
+    os.makedirs(study_dir, exist_ok=True)
+
+    print("=" * 70)
+    print(f"OPTUNA SEARCH -- {modality.upper()} -- {n_trials} trials x {tune_epochs} epochs")
+    print("=" * 70)
+
+    def objective(trial):
+        params = {
+            "epochs":        tune_epochs,
+            "patience":      tune_epochs,
+            "imgsz":         512,
+            "seed":          42,
+            "rect":          True,
+            "batch":         trial.suggest_categorical("batch", [16, 32, 64]),
+            "optimizer":     trial.suggest_categorical("optimizer", ["SGD", "Adam", "AdamW"]),
+            "lr0":           trial.suggest_float("lr0", 1e-4, 1e-1, log=True),
+            "weight_decay":  trial.suggest_float("weight_decay", 1e-6, 1e-2, log=True),
+            "momentum":      trial.suggest_float("momentum", 0.7, 0.99),
+            "warmup_epochs": trial.suggest_int("warmup_epochs", 1, 5),
+            "box":           trial.suggest_float("box", 4.0, 10.0),
+            "cls":           trial.suggest_float("cls", 0.3, 1.5),
+            "hsv_h":         trial.suggest_float("hsv_h", 0.0, 0.1),
+            "hsv_s":         trial.suggest_float("hsv_s", 0.0, 0.9),
+            "hsv_v":         trial.suggest_float("hsv_v", 0.0, 0.9),
+            "fliplr":        trial.suggest_float("fliplr", 0.0, 0.5),
+            "mosaic":        trial.suggest_float("mosaic", 0.5, 1.0),
+        }
+
+        trial_run = os.path.join(study_dir, f"trial_{trial.number}")
+        model = YOLO(WEIGHTS_PATH)
+        try:
+            model.train(
+                data=yaml_path,
+                project=study_dir,
+                name=f"trial_{trial.number}",
+                exist_ok=True,
+                save=False,
+                plots=False,
+                verbose=False,
+                **params,
+            )
+            results_csv = os.path.join(trial_run, "results.csv")
+            if os.path.exists(results_csv):
+                df = pd.read_csv(results_csv)
+                df.columns = [c.strip() for c in df.columns]
+                if "metrics/mAP50(B)" in df.columns:
+                    return float(df["metrics/mAP50(B)"].max())
+        except Exception as e:
+            print(f"  Trial {trial.number} failed: {e}")
+        return 0.0
+
+    study = optuna.create_study(
+        direction="maximize",
+        study_name=f"kaist_{modality}",
+        sampler=optuna.samplers.TPESampler(seed=42),
+    )
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
+
+    print("\n" + "=" * 70)
+    print("OPTUNA SEARCH COMPLETE")
+    print("=" * 70)
+    print(f"Best trial : #{study.best_trial.number}")
+    print(f"Best mAP50 : {study.best_value:.4f}")
+    print("Best params:")
+    for k, v in study.best_params.items():
+        print(f"  {k}: {v}")
+
+    # Persist results
+    out = {"best_map50": study.best_value, "params": study.best_params}
+    best_path = os.path.join(study_dir, "best_params.json")
+    with open(best_path, "w") as f:
+        json.dump(out, f, indent=2)
+    print(f"\nBest params saved to: {best_path}")
+
+    try:
+        study.trials_dataframe().to_csv(
+            os.path.join(study_dir, "trials.csv"), index=False
+        )
+    except Exception:
+        pass
+
+    return study.best_params
 
 
 # =============================================================================
@@ -256,6 +475,21 @@ if __name__ == "__main__":
         "--data", type=str, default=None,
         help="Override path to dataset YAML (for Docker or custom setups)"
     )
+    parser.add_argument(
+        "--tune", action="store_true",
+        help="Run Optuna hyperparameter search instead of training"
+    )
+    parser.add_argument(
+        "--trials", type=int, default=50,
+        help="Number of Optuna trials (default: 50)"
+    )
+    parser.add_argument(
+        "--tune-epochs", type=int, default=30,
+        help="Epochs per Optuna trial (default: 30)"
+    )
     args = parser.parse_args()
 
-    train(args.modality, args.resume, args.data)
+    if args.tune:
+        optimize(args.modality, args.trials, args.tune_epochs, args.data)
+    else:
+        train(args.modality, args.resume, args.data)
