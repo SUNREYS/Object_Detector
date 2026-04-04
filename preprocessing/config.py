@@ -33,6 +33,17 @@ OUTPUT_ROOT = r"C:\Users\poopi\Documents\programming projectzx\exjobb\datasets\k
 # Processed output subdirectories
 OUTPUT_IMAGES_VISIBLE = os.path.join(OUTPUT_ROOT, "images", "visible")
 OUTPUT_IMAGES_THERMAL = os.path.join(OUTPUT_ROOT, "images", "thermal")
+OUTPUT_IMAGES_GREYSCALE_INVERSION = os.path.join(OUTPUT_ROOT, "images", "greyscale_inversion")
+OUTPUT_IMAGES_PIGAN = os.path.join(OUTPUT_ROOT, "images", "PI-GAN_gen")
+
+# Lookup: modality name -> processed image directory
+MODALITY_IMAGE_DIRS = {
+    "visible": OUTPUT_IMAGES_VISIBLE,
+    "thermal": OUTPUT_IMAGES_THERMAL,
+    "greyscale_inversion": OUTPUT_IMAGES_GREYSCALE_INVERSION,
+    "PI-GAN_gen": OUTPUT_IMAGES_PIGAN,
+}
+
 OUTPUT_LABELS = os.path.join(OUTPUT_ROOT, "labels")
 OUTPUT_METADATA = os.path.join(OUTPUT_ROOT, "metadata")
 OUTPUT_PLOTS = os.path.join(OUTPUT_ROOT, "plots")

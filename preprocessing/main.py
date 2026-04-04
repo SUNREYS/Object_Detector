@@ -83,7 +83,8 @@ def load_intermediate(name: str):
 
 
 def run_full_pipeline(start_step: int = 1, end_step: int = 4,
-                      results_csv: str = None):
+                      results_csv: str = None, modality: str = "visible",
+                      newsplit: bool = False):
     """
     Run the preprocessing pipeline from start_step to end_step.
 
@@ -117,7 +118,7 @@ def run_full_pipeline(start_step: int = 1, end_step: int = 4,
     # ---- Step 2: Extract features ----
     if start_step <= 2 <= end_step:
         from step2_features import run_step2
-        all_features = run_step2(frame_results)
+        all_features = run_step2(frame_results, modality=modality)
         save_intermediate(all_features, "step2_features")
     elif start_step > 2:
         all_features = load_intermediate("step2_features")
@@ -128,7 +129,7 @@ def run_full_pipeline(start_step: int = 1, end_step: int = 4,
     # ---- Step 3: Export metadata to CSV ----
     if start_step <= 3 <= end_step:
         from step4_export import run_step4
-        csv_paths = run_step4(all_features)
+        csv_paths = run_step4(all_features, modalities=[modality])
 
     # ---- Step 4: Generate plots ----
     if start_step <= 4 <= end_step:
@@ -149,6 +150,15 @@ def main():
     parser.add_argument(
         "--step", type=str, default="1-4",
         help="Step(s) to run. Examples: '1', '1-4', '2-4', '4'. Default: 1-4"
+    )
+    parser.add_argument(
+        "--modality", type=str, default="visible",
+        choices=["visible", "thermal", "greyscale_inversion", "PI-GAN_gen"],
+        help="Which modality to process. Default: visible"
+    )
+    parser.add_argument(
+        "--newsplit", action="store_true",
+        help="Use newsplit mode (train/val split from --newsplit.py)"
     )
     parser.add_argument(
         "--plots-only", action="store_true",
@@ -175,7 +185,8 @@ def main():
         start_step = int(args.step)
         end_step = start_step
 
-    run_full_pipeline(start_step, end_step, args.results_csv)
+    run_full_pipeline(start_step, end_step, args.results_csv, 
+                      args.modality, args.newsplit)
 
 
 if __name__ == "__main__":

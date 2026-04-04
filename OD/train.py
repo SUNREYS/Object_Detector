@@ -56,6 +56,7 @@ DATASET_YAML = {
     "visible": os.path.join(DATASET_ROOT, "kaist_visible.yaml"),
     "thermal": os.path.join(DATASET_ROOT, "kaist_thermal.yaml"),
     "greyscale_inversion": os.path.join(DATASET_ROOT, "kaist_greyscale_inversion.yaml"),
+    "PI-GAN_gen": os.path.join(DATASET_ROOT, "kaist_pigan.yaml"),
 }
 
 # Training output directory
@@ -296,7 +297,8 @@ def train(modality: str = "visible", resume: bool = False,
 # =============================================================================
 
 def optimize(modality: str = "visible", n_trials: int = 50,
-             tune_epochs: int = 30, data_yaml: str = None):
+             tune_epochs: int = 30, data_yaml: str = None,
+             timeout_seconds: int = None):
     """
     Run an Optuna study to find the best hyperparameters for the given modality.
 
@@ -336,7 +338,7 @@ def optimize(modality: str = "visible", n_trials: int = 50,
             "imgsz":         512,
             "seed":          42,
             "rect":          True,
-            "batch":         trial.suggest_categorical("batch", [16, 32, 64]),
+            "batch":         trial.suggest_categorical("batch", [32, 64, 80]),
             "optimizer":     trial.suggest_categorical("optimizer", ["SGD", "Adam", "AdamW"]),
             "lr0":           trial.suggest_float("lr0", 1e-4, 1e-1, log=True),
             "weight_decay":  trial.suggest_float("weight_decay", 1e-6, 1e-2, log=True),
@@ -465,7 +467,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--modality", type=str, default="visible",
-        choices=["visible", "thermal", "greyscale_inversion"],
+        choices=["visible", "thermal", "greyscale_inversion", "PI-GAN_gen"],
     )
     parser.add_argument(
         "--resume", action="store_true",
