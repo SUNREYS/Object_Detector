@@ -1,0 +1,20 @@
+STEP 1: ANNOTATION CONVERSION AND IMAGE PROCESSING
+
+[Step 1.1] Loading frame lists from imageSets...
+  KAIST train list: 25086
+  KAIST test list:  45140
+  Combined total:   70226
+[Step 1.2] Splitting training data into train/val...
+  Training subset: 56181
+  Validation subset: 14045
+[Step 1] Summary:
+  Total frames processed: 70226
+  Skipped frames:         0
+  Frames with objects:    31360
+  Total objects (after crop): 71074
+[Step 2] Summary:
+  Frames with features: 14045
+  Frames with people:   6348
+  Total objects:        14689
+  Day frames:           9137
+  Night frames:         4908
