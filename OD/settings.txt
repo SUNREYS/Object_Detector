@@ -1,0 +1,34 @@
+Settings for RGB/inversion:
+
+HYPERPARAMS = {
+    "epochs": 800,
+    "patience": 30,
+    "imgsz": 512,
+    "batch": 64,
+    "workers": 4,       # Windows DataLoader spawn is slow; 4 is optimal
+    "cache": "disk",     # ~41GB actual data fits in 42GB available RAM
+    "device": 0,        # Force GPU 0 explicitly, bypasses WDDM auto-select
+    "lr0": 0.003175673197442611,
+    "weight_decay": 0.00010299214204601986,
+    "momentum": 0.9085426764391346,
+    "optimizer": "SGD",
+    "seed": 42,
+    "rect": True,
+}
+
+Settings for PI-GAN:
+
+Best params:
+  batch: 64
+  optimizer: AdamW
+  lr0: 0.002863527111494497
+  weight_decay: 2.9653955672573863e-06
+  momentum: 0.7001237139162004
+  warmup_epochs: 4
+  box: 5.30859869833292
+  cls: 0.9864929265634742
+  hsv_h: 0.03897767816292479
+  hsv_s: 0.10550162188408234
+  hsv_v: 0.7311958141614289
+  fliplr: 0.004510238535283168
+  mosaic: 0.6471358807190548
