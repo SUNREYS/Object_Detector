@@ -69,16 +69,24 @@ RUNS_DIR = os.path.join(SCRIPT_DIR, "runs")
 
 HYPERPARAMS = {
     "epochs": 800,
-    "patience": 10,
+    "patience": 1,
     "imgsz": 512,
     "batch": 64,
     "workers": 4,       # Windows DataLoader spawn is slow; 4 is optimal
     "cache": "disk",     # ~41GB actual data fits in 42GB available RAM
     "device": 0,        # Force GPU 0 explicitly, bypasses WDDM auto-select
-    "lr0": 0.003175673197442611,
-    "weight_decay": 0.00010299214204601986,
-    "momentum": 0.9085426764391346,
-    "optimizer": "SGD",
+    "lr0": 0.002863527111494497,
+    "weight_decay": 2.9653955672573863e-06,
+    "momentum": 0.7001237139162004,
+    "optimizer": "AdamW",
+    "warmup_epochs": 4,
+    "box": 5.30859869833292,
+    "cls": 0.9864929265634742,
+    "hsv_h": 0.03897767816292479,
+    "hsv_s": 0.10550162188408234,
+    "hsv_v": 0.7311958141614289,
+    "fliplr": 0.004510238535283168,
+    "mosaic": 0.6471358807190548,
     "seed": 42,
     "rect": True,
 }
@@ -338,7 +346,7 @@ def optimize(modality: str = "visible", n_trials: int = 50,
             "imgsz":         512,
             "seed":          42,
             "rect":          True,
-            "batch":         trial.suggest_categorical("batch", [32, 64, 80]),
+            "batch":         trial.suggest_categorical("batch", [32, 64]),
             "optimizer":     trial.suggest_categorical("optimizer", ["SGD", "Adam", "AdamW"]),
             "lr0":           trial.suggest_float("lr0", 1e-4, 1e-1, log=True),
             "weight_decay":  trial.suggest_float("weight_decay", 1e-6, 1e-2, log=True),
