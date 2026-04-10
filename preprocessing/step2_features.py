@@ -382,11 +382,18 @@ def extract_frame_features(frame_result: Dict, img_dir: str = None) -> Dict:
     # Image-level features — use the caller-specified modality directory,
     # or fall back to the visible image path stored by Step 1.
     if img_dir is not None:
-        vis_path = os.path.join(
-            img_dir,
-            frame_result.get("split", ""),
-            frame_result.get("flat_name", "") + ".jpg",
-        )
+        split = frame_result.get("split", "")
+        fname = frame_result.get("flat_name", "") + ".jpg"
+        # Handle both flat layout (kaist: split/name.jpg)
+        # and images-subdir layout (pid: split/images/name.jpg)
+        direct_path = os.path.join(img_dir, split, fname)
+        images_subdir_path = os.path.join(img_dir, split, "images", fname)
+        if os.path.exists(direct_path):
+            vis_path = direct_path
+        elif os.path.exists(images_subdir_path):
+            vis_path = images_subdir_path
+        else:
+            vis_path = direct_path  # fallback (will gracefully fail later)
     else:
         vis_path = frame_result.get("visible_path", "")
 

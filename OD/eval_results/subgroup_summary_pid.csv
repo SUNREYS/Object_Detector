@@ -1,0 +1,3 @@
+subgroup_type,subgroup_value,count,detected,missed,recall
+day_night,day,4881,4309,572,0.8828
+day_night,night,9808,1227,8581,0.1251

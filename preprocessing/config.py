@@ -22,13 +22,16 @@ import os
 #   Root paths for the raw KAIST dataset and output directories.
 # =============================================================================
 
-KAIST_ROOT = r"C:\Users\poopi\Downloads\kaist-cvpr15"
+KAIST_ROOT = r"C:\Users\rima\Desktop\rima_exjobb\datasets\kaist-cvpr15"
 KAIST_IMAGES = os.path.join(KAIST_ROOT, "images")
 KAIST_ANNOTATIONS = os.path.join(KAIST_ROOT, "annotations-xml-new-sanitized")
 KAIST_IMAGE_SETS = os.path.join(KAIST_ROOT, "imageSets")
 
 # Output root for all processed data
-OUTPUT_ROOT = r"C:\Users\poopi\Documents\programming projectzx\exjobb\datasets\kaist_processed"
+OUTPUT_ROOT = r"C:\Users\rima\Desktop\rima_exjobb\datasets"
+
+# PID dataset root
+PID_ROOT = r"C:\Users\rima\Desktop\rima_exjobb\datasets\PID"
 
 # Processed output subdirectories
 OUTPUT_IMAGES_VISIBLE = os.path.join(OUTPUT_ROOT, "images", "visible")
@@ -42,10 +45,12 @@ MODALITY_IMAGE_DIRS = {
     "thermal": OUTPUT_IMAGES_THERMAL,
     "greyscale_inversion": OUTPUT_IMAGES_GREYSCALE_INVERSION,
     "PI-GAN_gen": OUTPUT_IMAGES_PIGAN,
+    "pid": PID_ROOT,
+    "PID": PID_ROOT,
 }
 
 OUTPUT_LABELS = os.path.join(OUTPUT_ROOT, "labels")
-OUTPUT_METADATA = os.path.join(OUTPUT_ROOT, "metadata")
+OUTPUT_METADATA = PID_ROOT   # step1_results.pkl lives in datasets/PID/
 OUTPUT_PLOTS = os.path.join(OUTPUT_ROOT, "plots")
 
 # Train/val split subdirectories (created under images and labels)

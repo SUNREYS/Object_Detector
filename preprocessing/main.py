@@ -153,7 +153,7 @@ def main():
     )
     parser.add_argument(
         "--modality", type=str, default="visible",
-        choices=["visible", "thermal", "greyscale_inversion", "PI-GAN_gen"],
+        choices=["visible", "thermal", "greyscale_inversion", "PI-GAN_gen", "PID"],
         help="Which modality to process. Default: visible"
     )
     parser.add_argument(

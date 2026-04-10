@@ -1,0 +1,323 @@
+==============================================================================
+EVALUATION RESULTS — WHAT EACH VALUE MEANS
+Thesis: Pedestrian Detection on Synthetic Thermal-to-Visible Translations
+==============================================================================
+
+This file explains every number in the evaluation output, in plain language.
+All examples reference the PID modality results.
+
+──────────────────────────────────────────────────────────────────────────────
+SECTION 1 — OVERALL DETECTION PERFORMANCE
+──────────────────────────────────────────────────────────────────────────────
+
+GT objects (14 689)
+    Total number of annotated pedestrians in the validation set.
+    This is the ground truth — every person the detector SHOULD find.
+
+True Positives — TP (5 536)
+    Detections that correctly matched a ground truth box (IoU ≥ 0.5).
+    "The detector found this pedestrian."
+
+False Positives — FP (825)
+    Detections that did NOT match any ground truth box.
+    "The detector thought it saw a pedestrian, but there was none."
+
+False Negatives — FN (9 153)
+    Ground truth boxes that no detection was matched to.
+    "The detector missed this pedestrian entirely."
+
+Precision (0.8703)
+    Formula: TP / (TP + FP)
+    Of every detection the model made, 87% were correct.
+    High precision = detector rarely cries wolf.
+
+Recall (0.3769)
+    Formula: TP / (TP + FN) = TP / GT objects
+    Of every real pedestrian, the detector found only 38%.
+    Low recall = detector misses many people. This is the key weakness here.
+
+F1 Score (0.5260)
+    Formula: 2 × Precision × Recall / (Precision + Recall)
+    Harmonic mean of precision and recall. Summarises overall performance
+    in one number. 0 = worst, 1 = perfect.
+    High precision + low recall → F1 is pulled down toward the worse metric.
+
+──────────────────────────────────────────────────────────────────────────────
+SECTION 2 — DAY / NIGHT / SIZE RECALL
+──────────────────────────────────────────────────────────────────────────────
+
+Recall day (0.3782) / night (0.3740)
+    Recall computed separately for daytime and night-time images.
+    Near-identical here → lighting condition does not strongly affect PID.
+
+Recall small (0.1795) / medium (0.3566) / large (0.4627)
+    Recall split by object size category:
+      small  = bounding box area < ~32×32 pixels
+      medium = typical pedestrian size
+      large  = close-up / large bounding box
+    Small objects are hardest: fewer pixels → less visual information for
+    the detector. The 0.18 recall for small objects vs 0.46 for large
+    confirms the expected size-difficulty relationship.
+
+──────────────────────────────────────────────────────────────────────────────
+SECTION 3b — GHOST & HALLUCINATION METRICS
+──────────────────────────────────────────────────────────────────────────────
+
+These metrics compare the synthetic (generated) image against its thermal
+ground truth. They measure how faithfully the generator reproduced the
+original thermal scene.
+
+ghost_score  (image-level mean 0.0608 / per-object mean 0.0613)
+    Measures structured residual error between the generated and thermal image.
+    How: pixel-by-pixel absolute difference, then Gaussian blur to suppress
+    noise, then mean. Range 0–1.
+    Low = generated image is close to thermal (good fidelity).
+    High = visible structured differences / ghosting artifacts.
+    0.06 is relatively low → PID generation has limited ghosting.
+
+hallucination_score  (image-level mean 0.3190 / per-object mean 0.3417)
+    Fraction of edges in the generated image that have NO corresponding edge
+    in the thermal ground truth.
+    How: Canny edges on both images; thermal edges are dilated (tolerance);
+    hallucinated = gen edges not covered by dilated thermal edges.
+    Range 0–1. 0 = every generated edge matches reality; 1 = all edges are fabricated.
+    0.34 means ~34% of generated edges don't exist in reality — the generator
+    invented visual features. This is moderate hallucination.
+
+object_ssim  (image-level mean 0.6358 / per-object mean 0.6360)
+    Structural Similarity Index (SSIM) between a generated object crop and the
+    corresponding thermal GT crop. Per-channel average over BGR.
+    Range –1 to 1; 1 = structurally identical.
+    0.64 means moderate structural preservation — generated objects look roughly
+    like their thermal counterparts but with noticeable differences.
+
+By day / night:
+    Day ghost_score higher (0.069) than night (0.046): more ghosting artifacts
+    in daytime images, possibly due to sunlight/thermal contrast differences.
+    Night object_ssim higher (0.751 vs 0.575 day): nighttime generated images
+    are structurally closer to thermal — thermal imagery is more predictable at night.
+
+Detected vs missed objects:
+    Detected objects have lower ghost_score (0.042) and higher object_ssim (0.719)
+    than missed objects (ghost 0.073, ssim 0.586).
+    → The detector performs better when the generated image closely resembles
+    the thermal ground truth. Poor generation quality directly causes misses.
+
+──────────────────────────────────────────────────────────────────────────────
+SECTION 3c — LPIPS (PERCEPTUAL SIMILARITY)
+──────────────────────────────────────────────────────────────────────────────
+
+lpips_mean  (0.1786 image-level / 0.1757 per-object)
+    Learned Perceptual Image Patch Similarity between generated and thermal crops.
+    Uses deep features from pretrained AlexNet. Range roughly 0–1.
+    0 = perceptually identical; higher = more perceptually different.
+    0.18 = low-to-moderate perceptual difference.
+
+object_lpips detected vs missed:
+    Detected: mean 0.1127   Missed: mean 0.2149
+    Objects with higher perceptual error (LPIPS ≈ 0.21) are twice as likely
+    to be missed. The detector is sensitive to perceptual quality: if the
+    generated pedestrian doesn't "look right" perceptually, it gets missed.
+
+──────────────────────────────────────────────────────────────────────────────
+SECTION 5 — CORRELATION WITH DETECTION PERFORMANCE
+──────────────────────────────────────────────────────────────────────────────
+
+Only four key metrics are shown. Each row shows the Pearson correlation
+between that metric and three performance measures (recall, F1, mean_conf).
+
+How to read the table:
+    r > 0 → higher metric value → better detection performance
+    r < 0 → higher metric value → worse detection performance
+    * = statistically significant (p < 0.05)
+    No * = might be due to chance
+
+sharpness   r ≈ +0.04 (recall), +0.04 (F1), +0.07 (conf)
+    Weak positive: sharper images slightly easier to detect.
+    Significance reached but effect size is small.
+
+ghost_score   r ≈ –0.25 (recall), –0.25 (F1), –0.38 (conf)
+    Moderate negative: more ghosting → significantly lower detection.
+    Ghost_score is among the strongest predictors of poor detection here.
+
+object_ssim   r ≈ +0.30 (recall), +0.31 (F1), +0.49 (conf)
+    Moderate positive: higher structural similarity → better detection.
+    Strongest single correlation with confidence (0.49*).
+    When the generated image structurally resembles the thermal original,
+    the detector is both more accurate and more confident.
+
+lpips_mean   r ≈ –0.30 (recall), –0.30 (F1), –0.46 (conf)
+    Moderate negative: higher perceptual error → worse detection.
+    Mirror of object_ssim; confirms the perceptual quality finding.
+
+──────────────────────────────────────────────────────────────────────────────
+SECTION 6 — SHARPNESS × SIZE RECALL TABLE
+──────────────────────────────────────────────────────────────────────────────
+
+Cross-tabulation of recall by sharpness level and object size.
+Sharpness = Var(Laplacian) on the object crop; higher = sharper edges.
+Split at the median: "low" = below median, "high" = at or above.
+
+How to read:
+    Each cell = recall(detected/total) for objects in that (sharpness, size) cell.
+    (N) in parentheses = number of objects in that cell.
+
+Example (Overall):
+    low sharpness / small:   0.07  (182 objects) — 7% recall, very poor
+    high sharpness / small:  0.58  (52 objects)  — 58% recall, much better
+    low sharpness / large:   0.43  (2154 objects)
+    high sharpness / large:  0.54  (1040 objects)
+
+Key insight: Sharpness matters most for small objects. The gap between
+low (0.07) and high (0.58) sharpness recall is huge for small objects,
+but smaller for medium (0.30 vs 0.40) and large (0.43 vs 0.54).
+This confirms the hypothesis: small objects have few pixels, so blur
+destroys the discriminative features the detector needs.
+
+──────────────────────────────────────────────────────────────────────────────
+SECTION 7 — FALSE POSITIVE ANALYSIS
+──────────────────────────────────────────────────────────────────────────────
+
+FPPI  (False Positives Per Image)
+    FPPI = total FP / total images.
+    Standard metric for evaluating false alarm rate.
+    Lower is better — an autonomous system must handle each false alarm.
+
+FPPI by day/night:
+    Separate FPPI for daytime and night images.
+    Higher FPPI during the day suggests more background clutter / complex
+    scenes confusing the detector during daylight hours.
+
+High-confidence FP note:
+    Percentage of FPs with confidence > 0.5.
+    Low-confidence FPs (0.25–0.5) are expected near the threshold and less
+    concerning. High-confidence FPs indicate the detector is strongly misled
+    — e.g., a textured patch that closely resembles a person both visually
+    and in the generation domain.
+
+──────────────────────────────────────────────────────────────────────────────
+SECTION 8 — PERFORMANCE BY CONDITION (LOW/HIGH SPLIT)
+──────────────────────────────────────────────────────────────────────────────
+
+For each metric, images are split at the median into "low" and "high" halves.
+Recall and F1 are computed for each half (overall, day, night).
+
+Columns:
+    Low Recall   = recall for images where the metric is below the median
+    High Recall  = recall for images where the metric is at or above median
+    Low F1 / High F1 = same, but for F1 score
+    N low / N high   = number of images in each half
+
+How to read:
+    If High Recall >> Low Recall → high values of this metric help detection.
+    If Low Recall >> High Recall → high values hurt detection.
+
+Sharpness:
+    High sharpness recall > low sharpness recall → sharper images easier to detect.
+
+Hallucination score:
+    High hallucination recall > low hallucination recall (counterintuitive).
+    Caveat: images with hallucination_score = 0 are often perfectly dark/blank patches
+    where Canny finds no edges at all (score defaults to 0), not genuine quality.
+    The raw split must be interpreted with care; the correlation table
+    (+0.05 with recall) is a better guide — effect is weak.
+
+Object SSIM:
+    High SSIM recall (0.585) >> low SSIM recall (0.194) → strongest condition split.
+    Confirms: structural similarity to thermal GT is the dominant factor.
+    For night images, the gap is even more extreme (0.44 vs 0.017).
+
+LPIPS mean:
+    Low LPIPS (= better perceptual quality) recall (0.622) >> high LPIPS (0.139).
+    Objects that perceptually resemble the thermal GT are detected at 4.5×
+    higher rate than those with large perceptual error.
+
+──────────────────────────────────────────────────────────────────────────────
+SECTION 9 — ROOT CAUSE ANALYSIS (LOGISTIC REGRESSION)
+──────────────────────────────────────────────────────────────────────────────
+
+A logistic regression model is trained to predict whether each object is
+detected (1) or missed (0) from per-object features.
+
+Features are standardised (mean=0, std=1) before fitting, so coefficients
+are directly comparable as importance scores — larger absolute value = more
+important, sign indicates direction.
+
+Model accuracy (0.8339)
+    83% of objects correctly classified as detected/missed on training data.
+    High because the class imbalance (many misses heavily favour predicting
+    "missed"), so interpret with care. The coefficient ordering matters more
+    than the accuracy number.
+
+Coefficient interpretation:
+
+    object_edge_strength  +2.70  →  helps ↑
+        Most important feature. Objects with stronger edges are much more
+        likely to be detected. Edge-rich objects (clear outlines, high
+        contrast boundaries) are easy for the detector to recognise.
+
+    object_contrast       –1.23  →  hurts ↓
+        Higher local contrast around the object actually correlates with
+        misses. Likely a confound: high contrast regions may include
+        background clutter, not the object itself.
+
+    object_lpips          –0.95  →  hurts ↓
+        Higher perceptual error → more missed detections. Confirms the
+        generation quality finding — badly generated pedestrians get missed.
+
+    object_blur           –0.88  →  hurts ↓
+        Higher Laplacian variance (= sharper crop) coded as "blur" here,
+        but note: this is actually the sharpness score with inverted sign
+        in the naming. Blurrier objects (low variance) → harder to detect.
+        (Check naming: object_blur = Var(Laplacian); higher = sharper.)
+
+    object_ssim           +0.81  →  helps ↑
+        Higher structural similarity to thermal GT helps detection.
+        Confirms the key finding: generation fidelity → detection success.
+
+    object_brightness     –0.44  →  hurts ↓
+        Brighter objects slightly harder. May reflect overexposed or blown-out
+        crops in the translation where thermal hot-spots become white regions.
+
+    bbox_area_px          +0.41  →  helps ↑
+        Larger objects easier to detect, as expected from Section 2.
+
+    ghost_score           +0.18  →  helps ↑  (weak, near 0)
+        Weak positive — likely a suppressed effect because ghost_score
+        and object_ssim are correlated; in isolation ghost_score hurts.
+
+    fg_bg_diff            +0.09  →  helps ↑  (very weak)
+        Objects that stand out from background (high foreground–background
+        brightness difference) slightly easier to detect.
+
+    hallucination_score   +0.04  →  helps ↑  (negligible)
+        Effectively zero — hallucination does not independently affect
+        detection once other features are controlled for.
+
+──────────────────────────────────────────────────────────────────────────────
+SUMMARY: KEY TAKEAWAYS
+──────────────────────────────────────────────────────────────────────────────
+
+1. Recall is low (0.38): the model misses ~62% of pedestrians in PID images.
+   Precision is high (0.87): most detections ARE correct, so the problem is
+   coverage, not false alarms.
+
+2. Generation quality is the dominant failure driver:
+   — object_ssim and lpips_mean are the strongest correlates of detection
+     success (|r| ≈ 0.30–0.49).
+   — Detected objects have ~73% SSIM vs ~59% for missed objects.
+   — Detected objects have LPIPS 0.11 vs 0.21 for missed.
+
+3. Object size matters more than day/night:
+   — Small objects: 18% recall, large: 46%.
+   — Day vs night recall is nearly identical (0.378 vs 0.374).
+
+4. Sharpness has a gating effect for small objects:
+   — High sharpness / small: 58% recall.
+   — Low sharpness / small:   7% recall.
+   — Effect is much weaker for larger objects.
+
+5. FPPI is low (see Section 7): the detector is conservative — it prefers
+   to miss people rather than hallucinate them.
+
+==============================================================================

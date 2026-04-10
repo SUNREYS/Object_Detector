@@ -1,0 +1,322 @@
+# Plan: Refactor evaluate.py into Modules + Add LPIPS, FID, FP Analysis
+
+## Context
+
+The evaluation pipeline (OD/evaluate.py, 1298 lines) needs to be:
+1. Split into modules for readability
+2. Extended with LPIPS, FID, sharpness x size analysis, and false positive analysis
+3. Documented with math explanations and thesis-relevant comments
+
+The thesis evaluates thermal-to-visible translation models (PID, PI-GAN) for pedestrian
+detection, asking: what image properties cause detection to succeed or fail?
+
+---
+
+## Critical Fix: Stop Converting Images to Grayscale
+
+### The problem
+load_image_grayscale() (evaluate.py:182) forces all images to single-channel.
+But ALL images (PID, visible, thermal, PI-GAN) are 3-channel RGB (512x512x3, uint8).
+The YOLO detector sees RGB. Converting to grayscale:
+- Throws away color information the detector uses
+- Makes LPIPS impossible (requires RGB)
+- Loses per-channel quality differences (e.g. correct luminance but wrong colors)
+- Hides color-specific artifacts/ghosts
+
+### The fix
+- Primary loading: load_image(path) -> returns BGR as-is (3-channel)
+- Grayscale only when a specific metric needs it (Laplacian sharpness, Canny edges),
+  done internally via cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) inside that metric's function
+- SSIM, LPIPS, ghost detection: operate on the RGB image (or per-channel)
+- Per-object quality features: brightness = mean across all channels, contrast = std
+  across all channels, edge strength = computed on luminance channel internally
+
+## Bug Fix: infer_day_night()
+
+infer_day_night() is wrong: maps set06-08 as night.
+preprocessing/config.py correctly has: DAY = {set00,01,02,06,07,08}, NIGHT = {set03,04,05,09,10,11}.
+Will fix to match.
+
+---
+
+## Module Structure
+
+OD/
+  evaluate.py       (~150 lines) - CLI entry point + orchestration
+  eval_data.py      (~350 lines) - Data loading, detection matching, metadata merging
+  eval_metrics.py   (~450 lines) - Quality metrics: per-object quality, ghost, LPIPS, FID
+  eval_analysis.py  (~500 lines) - Summary statistics, correlation, FP analysis, sharpness x size
+  eval_plots.py     (~500 lines) - All plotting functions
+
+### evaluate.py (entry point + orchestration)
+- Path constants (SCRIPT_DIR, PROJECT_ROOT, DATASET_ROOT, THERMAL_GT_DIR, etc.)
+- EVAL_FOLDER dict, get_eval_dir(), _Tee class
+- run_evaluation(weights_path, modality, conf, output_dir) - the orchestrator:
+  1. Loads model, locates val images/labels
+  2. Calls eval_data functions for detection matching
+  3. Calls eval_metrics functions for quality computation
+  4. Calls eval_analysis for summaries and correlations
+  5. Calls eval_plots for figures
+- __main__ CLI block (same interface: --modality pid or no flag for all)
+
+### eval_data.py (data loading + detection matching)
+What: Loads ground truth, runs model inference, matches predictions to GT via greedy IoU.
+- DAY_SETS, NIGHT_SETS constants (matching preprocessing/config.py)
+- infer_day_night(flat_name) -> FIXED to use correct set mapping
+- load_yolo_labels(label_path) -> list of (cls, cx, cy, w, h)
+- yolo_to_xyxy(cx, cy, w, h, img_size) -> pixel coords
+- compute_iou_xyxy(box1, box2) -> float
+- evaluate_image(pred_boxes, pred_confs, gt_labels) -> EXTENDED to also return:
+  - fp_boxes: list of {box: [x1,y1,x2,y2], conf: float} for each false positive
+  - tp_pred_indices: which prediction matched which GT (for confidence analysis)
+- match_gt_to_metadata(gt_labels, meta_objects) -> parallel list of metadata dicts
+
+### eval_metrics.py (quality metric computation)
+What: Computes image quality features that measure how faithful the synthetic images are
+and how that affects detection. Operates on RGB images (not grayscale).
+
+- load_image(path) -> 3-channel BGR uint8 as-is (NO grayscale conversion)
+- load_thermal_gt(flat_name, split) -> 3-channel thermal GT image
+- compute_object_quality_features(img_bgr, x1, y1, x2, y2, ...) -> per-object dict
+  - brightness: mean pixel intensity across all 3 channels -> brightness = mean(crop) / 255
+  - contrast: std of pixel intensities across all channels -> contrast = std(crop) / 255
+  - fg_bg_diff: |mean(foreground) - mean(background border)|
+  - edge_strength: Sobel magnitude on luminance (internal grayscale conversion)
+  - blur/sharpness: Laplacian variance on luminance (internal grayscale conversion)
+
+  Comment style example:
+    # -- Brightness ------------------------------------------------
+    # Mean pixel intensity across all 3 RGB channels.
+    # brightness = (1/N) * sum(pixel_values)  where N = H * W * 3
+    # Scaled to [0, 1] by dividing by 255.
+    # High brightness -> well-lit scene; low -> dark/underexposed.
+
+- compute_ghost_features(gen_crop_bgr, thermal_crop_bgr) -> per-object dict
+  - object_ssim: SSIM between crops (computed per-channel, then averaged)
+  - ghost_score: structured residual (Gaussian-blurred |gen - thermal|)
+  - hallucination_score: edge pixels in generated not in thermal
+
+- NEW: LPIPSScorer class
+
+  LPIPS (Learned Perceptual Image Patch Similarity)
+  -------------------------------------------------
+  Measures perceptual distance using deep features from AlexNet.
+
+  Math:  d(x, y) = sum_l  w_l * || normalize(f_l(x)) - normalize(f_l(y)) ||^2
+  where: f_l = features at layer l of pretrained AlexNet
+         w_l = learned weights calibrated against human perceptual judgments
+         normalize = unit-length normalization in channel dimension
+
+  Range: 0 = perceptually identical, ~0.5+ = very different
+
+  Why for this thesis:
+    SSIM measures structural similarity (pixel-level statistics).
+    LPIPS measures whether the image LOOKS right to a human.
+    A generated pedestrian might have correct brightness/edge stats (good SSIM)
+    but unrealistic textures or colors (bad LPIPS). If LPIPS correlates with
+    detection failure, it means the detector is sensitive to perceptual quality
+    -- the pedestrian needs to "look real" to be detected.
+
+  - Loads AlexNet model once (__init__)
+  - score(gen_crop_rgb, thermal_crop_rgb) -> float (per-object)
+  - Resizes crops to 64x64, normalizes to [-1, 1] tensors
+  - Only computable for synthetic modalities (PID, PI-GAN), not visible
+
+- NEW: FIDComputer class
+
+  FID (Frechet Inception Distance)
+  ---------------------------------
+  Measures distance between two IMAGE DISTRIBUTIONS (not individual images).
+  One FID number per modality = "how realistic is this generator overall?"
+
+  Math:  FID = ||mu_gen - mu_real||^2 + Tr(Sigma_gen + Sigma_real - 2 * sqrtm(Sigma_gen @ Sigma_real))
+  where: mu, Sigma = mean and covariance of 2048-dim InceptionV3 pool3 features
+         sqrtm = matrix square root (scipy.linalg.sqrtm)
+
+  Lower FID = distribution of generated images is closer to reference (thermal).
+
+  Why for this thesis:
+    Unlike per-image metrics, FID captures whether the MODEL as a whole
+    produces realistic images. A model could have some good and some bad
+    images (per-image SSIM varies), but FID tells us if the overall
+    distribution is right. Comparing FID vs mAP answers: does a more
+    realistic generator produce a better detector?
+
+  - Uses torchvision InceptionV3 (already installed, no new dependency)
+  - extract_features(image_dir, ...) -> Nx2048 feature matrix
+  - compute(gen_dir, real_dir) -> FID float
+  - Also computes FID_day and FID_night subsets
+
+### eval_analysis.py (statistical analysis)
+What: Takes the DataFrames from eval_data + eval_metrics and produces
+all statistical analyses for the thesis.
+
+- compute_subgroup_summary(df_img, df_obj, ...) (existing) -> subgroup CSV
+
+- print_full_summary(df_img, df_obj, df_fp, fid_results, ...) (extended):
+  Section 1: Overall detection (GT, TP, FP, FN, Precision, Recall, F1)
+  Section 2: Day/Night/Size recall breakdown
+  Section 3: Image quality metrics (scaled 0-1)
+  Section 3b: Ghost & hallucination metrics (by day/night, detected vs missed)
+  Section 3c: LPIPS metrics (by day/night, detected vs missed)
+  Section 4: FID summary (overall, day, night) vs mAP50
+  Section 5: Correlation table (all metrics vs recall, F1, mean_conf)
+  Section 6: Sharpness x Size x Day/Night cross-table
+  Section 7: False positive analysis
+  Section 8: Performance by condition (low/high split for each metric)
+
+- NEW: compute_sharpness_size_table(df_obj):
+
+  Cross-tabulates recall by sharpness level x object size.
+
+  sharpness = Var(Laplacian(crop))  -- higher = sharper
+  Objects split at MEDIAN sharpness into "low"/"high".
+  Sizes from YOLO bbox height: small (<=32px), medium (<=96px), large (>96px).
+
+  Output: 2x3 table (+ day/night variants):
+                  Small    Medium    Large
+  Low sharpness   recall   recall    recall   (n=...)
+  High sharpness  recall   recall    recall   (n=...)
+
+  Thesis question: Do small objects need high sharpness to be detected?
+  Hypothesis: small objects have few pixels -> blur destroys features ->
+  sharpness matters more for small than large objects.
+
+- NEW: analyze_false_positives(df_fp, df_img):
+
+  False Positive Analysis: WHY does the detector hallucinate?
+  ----------------------------------------------------------
+
+  1. Confidence distribution of FPs:
+     - Low conf (0.25-0.5): less worrying, detector is uncertain
+     - High conf (>0.5): detector is strongly fooled
+     high_conf_fp_rate = count(conf > 0.5) / total_fp
+
+  2. Image conditions that produce FPs:
+     - Pearson r(fp_count_per_image, ghost_score per_image)
+     - Pearson r(fp_count_per_image, hallucination_score)
+     - Day vs Night FP rate: fp_rate = FP / (TP + FP)
+
+  3. What the detector "sees" at FP locations:
+     - Extract brightness, contrast, edge_strength at each FP box
+     - Compare TP crops vs FP crops: are FP locations brighter? More edges?
+     - This answers: are FPs triggered by ghost artifacts, shadows, or textures?
+
+  4. Per-FP quality features (computed on the FP bounding box):
+     - fp_brightness, fp_contrast, fp_edge_strength, fp_blur
+     - If thermal GT available: fp_ghost_score, fp_hallucination_score
+       (Is the FP region where the generation produced artifacts?)
+
+- NEW: root_cause_analysis(df_obj):
+  Uses sklearn LogisticRegression to predict detected (True/False) from
+  [brightness, contrast, fg_bg_diff, edge_strength, blur, object_ssim,
+   ghost_score, hallucination_score, bbox_area, day_night].
+  Reports standardized coefficients as feature importance.
+
+### eval_plots.py (all plots)
+What: Generates thesis-quality figures. Each function = one logical figure.
+
+- plot_quality_vs_performance(dfs, output_dir) (existing) - binned scatter of quality vs recall/F1
+- NEW: plot_sharpness_size_heatmap(table, output_dir) - recall heatmap for sharpness x size
+- NEW: plot_fp_analysis(df_fp, df_img, output_dir):
+  - FP confidence histogram (bins colored low/high)
+  - FP rate by day/night bar chart
+  - FP crop properties vs TP crop properties (box plots)
+- NEW: plot_fid_vs_map_bar(fid_results, map_results, output_dir):
+  - Grouped bar chart: FID and mAP50 per modality
+- NEW: plot_lpips_vs_confidence(df_obj, output_dir):
+  - Scatter: per-object LPIPS vs prediction confidence
+- NEW: plot_interaction_effects(df_obj, output_dir):
+  - 2D heatmaps: edge_strength x brightness -> recall, SSIM x day_night -> recall
+
+---
+
+## New Dependencies
+
+Add to OD/requirements_py312.txt:
+  lpips>=0.1.4
+
+FID uses torchvision's InceptionV3 (already installed). No extra package needed.
+
+---
+
+## Implementation Order
+
+1. Module split (no new features, pure refactoring)
+   - Create eval_data.py, eval_metrics.py, eval_analysis.py, eval_plots.py
+   - Move functions from evaluate.py to appropriate modules
+   - Fix infer_day_night() bug
+   - Fix grayscale issue: replace load_image_grayscale -> load_image (keep 3-channel)
+     Update compute_object_quality_features and compute_ghost_features to work on BGR images
+   - evaluate.py becomes thin orchestrator importing from the 4 modules
+   - Verify: python evaluate.py --modality pid produces same output structure
+
+2. FP tracking
+   - Extend evaluate_image() to return fp_boxes with confidence
+   - Build per-FP DataFrame (fp_brightness, fp_contrast, fp_edge_strength, etc.)
+   - Add mean_conf to per-image DataFrame
+
+3. LPIPS
+   - pip install lpips
+   - Implement LPIPSScorer in eval_metrics.py
+   - Add object_lpips per-object, lpips_mean per-image
+   - Add to correlation table and condition breakdown
+
+4. FID
+   - Implement FIDComputer in eval_metrics.py (InceptionV3 features + Frechet distance)
+   - Compute per-modality FID (+ day/night subsets)
+   - Load mAP50 from runs/{name}/results.csv for comparison table
+
+5. New analyses
+   - Sharpness x size cross-table in eval_analysis.py
+   - FP analysis in eval_analysis.py
+   - Root cause analysis (logistic regression) in eval_analysis.py
+
+6. New plots
+   - Sharpness x size heatmap, FP analysis, FID vs mAP, LPIPS vs confidence, interactions
+
+7. Documentation pass
+   - Module docstrings, section headers, math comments
+
+---
+
+## Comment/Documentation Style
+
+Every module gets a top-level docstring explaining WHAT and WHY.
+Section headers use banner comments:
+
+  # =============================================================================
+  # 3A. SSIM VS DETECTION PERFORMANCE
+  #   Measures whether structural similarity to thermal GT predicts detection
+  #   quality. Uses Pearson correlation at image level.
+  # =============================================================================
+
+Math formulas before the code:
+
+  # -- Ghost Score -----------------------------------------------
+  # Measures structured artifacts in generated images vs thermal GT.
+  # 1. Compute pixel-wise absolute residual: R(x,y) = |gen(x,y) - thermal(x,y)|
+  # 2. Gaussian blur to suppress random noise: S = GaussianBlur(R, ksize)
+  # 3. ghost_score = mean(S), range [0, 1]
+  # High ghost_score -> large structured differences -> visible artifacts
+
+No comments on obvious code. Focus on WHY and MATH.
+
+---
+
+## Verification
+
+- python OD/evaluate.py --modality pid -> same output structure + new columns
+- python OD/evaluate.py (no flag) -> runs all 3 modalities + combined plots
+- CSVs contain new columns: object_lpips, lpips_mean, mean_conf, fp columns
+- FID printed in summary, saved to eval log
+- FP analysis section in summary
+- Images loaded as RGB (3-channel), NOT converted to grayscale
+
+## Files Modified/Created
+- OD/evaluate.py      - Refactored to thin orchestrator (~150 lines)
+- OD/eval_data.py     - NEW (~350 lines)
+- OD/eval_metrics.py  - NEW (~450 lines)
+- OD/eval_analysis.py - NEW (~500 lines)
+- OD/eval_plots.py    - NEW (~500 lines)
+- OD/requirements_py312.txt - Add lpips

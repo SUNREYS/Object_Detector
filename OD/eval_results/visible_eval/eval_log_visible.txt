@@ -1,0 +1,123 @@
+======================================================================
+EVALUATION: VISIBLE
+======================================================================
+Loaded model: C:\Users\rima\Desktop\rima_exjobb\OD\runs\kaist_visible\weights\best.pt
+Found 14045 validation images in C:\Users\rima\Desktop\rima_exjobb\datasets\images\visible\val
+
+Running predictions (conf=0.25, iou_thresh=0.5)...
+
+Saved per-image results: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\per_image_results_visible.csv (14045 rows)
+Saved per-object results: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\per_object_results_visible.csv (0 rows)
+Saved FP results: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\per_fp_results_visible.csv (14410 rows)
+Saved subgroup summary: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\subgroup_summary_visible.csv
+
+============================================================
+1. OVERALL DETECTION PERFORMANCE — VISIBLE
+============================================================
+  GT objects          : 0
+  True Positives      : 0
+  False Positives     : 14410
+  False Negatives     : 0
+  Precision           : 0.0000
+  Recall              : 0.0000
+  F1 Score            : 0.0000
+
+  How each value is computed:
+  GT objects     = total ground-truth pedestrian bounding boxes in the validation set
+  True Positive  = a predicted box that overlaps a GT box by IoU ≥ 0.5 at conf ≥ 0.25;
+                   each GT box can only be matched once (highest-conf prediction wins)
+  False Positive = a predicted box that did NOT match any GT box (spurious detection)
+  False Negative = a GT box that was NOT matched by any prediction (missed pedestrian)
+  Precision      = TP / (TP + FP)  — of all predictions made, what fraction were correct
+  Recall         = TP / (TP + FN)  — of all real pedestrians, what fraction were found
+  F1 Score       = 2 × Precision × Recall / (Precision + Recall)  — harmonic mean
+
+============================================================
+2. DAY / NIGHT / SIZE RECALL — VISIBLE
+============================================================
+
+  How each value is computed:
+  Recall [group] = pedestrians detected in that group / all GT pedestrians in that group
+  (det/n) shown  = detected count / total GT count in that group
+  day/night      = inferred from filename (set 01–11 = day, set 12–20 = night in KAIST)
+
+============================================================
+3b. GHOST & HALLUCINATION METRICS — VISIBLE
+============================================================
+  All values shown as percentages (metric × 100).
+  ghost_score: pixel-level artefact between generated and thermal GT (0%=identical, 100%=completely different)
+  hallucination_score: fraction of generated edges absent from thermal GT (0%=none invented, 100%=all invented)
+  object_ssim: structural similarity to thermal GT (0%=different, 100%=identical)
+  (no thermal GT available — ghost metrics skipped)
+
+============================================================
+5. CORRELATION WITH DETECTION PERFORMANCE — VISIBLE
+============================================================
+  Pearson r ∈ [-1, 1].  +r → metric increases with better performance;  -r → metric increases as performance drops.
+  Recall = detected GT objects / total GT objects.  F1 = harmonic mean of Precision & Recall.
+  mean_conf = mean YOLO confidence score on TP predictions.  (* = statistically significant at p < 0.05)
+  Metrics: sharpness=Laplacian variance; ghost_score=pixel residual vs thermal GT [0-1]; object_ssim=SSIM vs thermal GT [0-1]; lpips_mean=perceptual distance vs thermal GT [0-1]
+
+  Metric                       Corr w/ recall        Corr w/ f1  Corr w/ mean_conf
+  -----------------------  ----------------  ----------------  ----------------
+  sharpness                  +nan             +nan             +0.0706*          
+  (* p < 0.05)
+
+  How each value is computed:
+  Each row = Pearson correlation between that metric (per image) and the performance column.
+  Pearson r = cov(X, Y) / (std(X) × std(Y))  — measures linear association, range −1 to +1.
+  Unit of analysis = one row per validation IMAGE (metrics averaged over all objects in that image).
+  p-value tests whether the correlation is statistically different from zero; * means p < 0.05.
+
+============================================================
+7. FALSE POSITIVE ANALYSIS — VISIBLE
+============================================================
+  Total FP        : 14410
+  Total images    : 14045
+  FPPI            : 1.0260  (false positives per image)
+
+  FPPI by day/night:
+    Day     : 1.0718  (9793 FPs / 9137 images)
+    Night   : 0.9407  (4617 FPs / 4908 images)
+
+  95.3% of FPs had confidence > 0.5 (high-confidence errors)
+
+  How each value is computed:
+  FPPI           = total false positives / total validation images
+                   (average number of spurious detections per image)
+  FPPI day/night = sum of FPs in day (or night) images / number of day (or night) images
+  FP             = a predicted box with conf ≥ 0.25 that did not overlap any GT box at IoU ≥ 0.5
+  High-conf FPs  = FPs where the model score > 0.5 (the detector was strongly but wrongly confident)
+
+============================================================
+8. PERFORMANCE BY SHARPNESS — VISIBLE
+============================================================
+  (median=135.55; 'low'=below, 'high'=at or above)
+  Group       Low Recall  High Recall    Low F1   High F1   N low   N high
+  --------  ----------  -----------  --------  --------  ------  -------
+  Overall         0.0000       0.0000    0.0000    0.0000    7022     7023
+  Day             0.0000       0.0000    0.0000    0.0000    5337     3800
+  Night           0.0000       0.0000    0.0000    0.0000    1685     3223
+
+  How each value is computed:
+  Images are split into two halves at the MEDIAN value of the metric.
+  Low  = images where the metric is BELOW the median.
+  High = images where the metric is AT OR ABOVE the median.
+  Recall  = sum(TP in group) / sum(TP + FN in group)  — fraction of pedestrians found
+  F1      = 2×P×R / (P+R) where P = sum(TP) / sum(TP+FP) in that group
+  N low / N high = number of IMAGES in each half (not objects)
+
+============================================================
+
+
+Generating plots...
+  Saved: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\fp_analysis.png
+
+All results saved to: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval
+  Saved: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\appendix\quality_vs_perf_brightness.png
+  Saved: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\appendix\quality_vs_perf_contrast.png
+  Saved: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\quality_vs_perf_sharpness.png
+  Saved: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\appendix\quality_vs_perf_edge_density.png
+  Saved: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\appendix\quality_vs_perf_blur.png
+
+Log saved to: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\eval_log_visible.txt
