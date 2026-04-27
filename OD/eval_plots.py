@@ -486,6 +486,7 @@ def plot_example_crops(
     pad_px: int = 50,
     img_size: int = 512,
     report_dir: str = None,
+    modality: str = "pid",
 ):
     """
     Save annotated bounding-box crop strips for thesis quality-metric examples.
@@ -693,34 +694,32 @@ def plot_example_crops(
                 # Adjust bbox coords to match upscaled crop
                 rx1, ry1, rx2, ry2 = (int(x * scale) for x in (rx1, ry1, rx2, ry2))
 
-            # ── Save square crop + full image to report_dir ──────────────
+            # ── Save full image only to report_dir (magenta bbox, thin stroke) ──
             if case_dir is not None:
                 fname = row["flat_name"]
-                # Square crop with bbox drawn (blue rectangle)
-                _tmp = _cv2.cvtColor(crop.copy(), _cv2.COLOR_RGB2BGR)
-                _cv2.rectangle(_tmp, (rx1, ry1), (rx2, ry2), (51, 51, 255), 2)
-                plt.imsave(
-                    os.path.join(case_dir, f"{fname}_pid_crop.png"),
-                    _cv2.cvtColor(_tmp, _cv2.COLOR_BGR2RGB),
-                )
-                # Full image with bbox highlighted (blue rectangle, thicker)
                 _full = _cv2.cvtColor(img.copy(), _cv2.COLOR_RGB2BGR)
                 _iw_f, _ih_f = _full.shape[1], _full.shape[0]
                 _fx1 = max(0, int((row["gt_cx"] - row["gt_w"] / 2) * _iw_f))
                 _fy1 = max(0, int((row["gt_cy"] - row["gt_h"] / 2) * _ih_f))
                 _fx2 = min(_iw_f, int((row["gt_cx"] + row["gt_w"] / 2) * _iw_f))
                 _fy2 = min(_ih_f, int((row["gt_cy"] + row["gt_h"] / 2) * _ih_f))
-                _cv2.rectangle(_full, (_fx1, _fy1), (_fx2, _fy2), (51, 51, 255), 3)
+                _cv2.rectangle(_full, (_fx1, _fy1), (_fx2, _fy2), (255, 0, 255), 1)
                 plt.imsave(
-                    os.path.join(case_dir, f"{fname}_pid_full.png"),
+                    os.path.join(case_dir, f"{fname}_{modality}_full.png"),
                     _cv2.cvtColor(_full, _cv2.COLOR_BGR2RGB),
+                )
+
+                # Save crop (1:1 square)
+                plt.imsave(
+                    os.path.join(case_dir, f"{fname}_{modality}_crop.png"),
+                    crop,
                 )
 
             # ── Generated image crop ──────────────────────────────────────
             ax = axes[ax_idx]
             ax.imshow(crop)
             rect = _Rect((rx1, ry1), rx2 - rx1, ry2 - ry1,
-                         linewidth=2, edgecolor="#FF3333", facecolor="none")
+                         linewidth=0.8, edgecolor="#FF00FF", facecolor="none")
             ax.add_patch(rect)
             ax.set_title(f"{val_str}\n{det_lbl}", fontsize=8, pad=4)
             ax.set_xlabel(row["flat_name"], fontsize=6, color="#666666")
@@ -745,7 +744,7 @@ def plot_example_crops(
                         ax2.imshow(thm_crop)
                         if case_dir is not None:
                             plt.imsave(
-                                os.path.join(case_dir, f"{row['flat_name']}_pid_crop_thermal.png"),
+                                os.path.join(case_dir, f"{row['flat_name']}_thermal_crop.png"),
                                 thm_crop,
                             )
                         rect2 = _Rect((tx1, ty1), tx2 - tx1, ty2 - ty1,
@@ -783,3 +782,104 @@ def plot_example_crops(
         plt.savefig(out_path, dpi=150, bbox_inches="tight")
         plt.close()
         print(f"  Saved example crops: {out_path}")
+
+
+# =============================================================================
+# FALSE POSITIVE EXAMPLES
+#   Show full images where the model detected something that wasn't a pedestrian.
+#   Grouped by quality metric (brightness, contrast, edge_strength) high/low.
+#   Magenta thin bbox around each false detection.
+# =============================================================================
+
+def plot_fp_examples(
+    df_fp: "pd.DataFrame",
+    image_dir: str,
+    report_dir: str,
+    modality: str = "pid",
+    n_examples: int = 3,
+    img_size: int = 512,
+):
+    """
+    Save full images with magenta thin bboxes around false positive detections,
+    grouped by quality metric extremes (high / low brightness, contrast, edge_strength).
+
+    Parameters
+    ----------
+    df_fp       : per_fp_results DataFrame with fp_cx/cy/w/h columns
+    image_dir   : directory containing .jpg images named {flat_name}.jpg
+    report_dir  : root output folder — subfolders are created per group
+    modality    : used for file naming (e.g. 'pid', 'visible')
+    n_examples  : number of example images per group
+    img_size    : expected image edge length for normalised coord conversion
+    """
+    import cv2 as _cv2
+    import matplotlib.pyplot as plt
+
+    required = {"flat_name", "fp_cx", "fp_cy", "fp_w", "fp_h"}
+    if not required.issubset(df_fp.columns):
+        print("  plot_fp_examples: missing bbox columns in df_fp, skipping.")
+        return
+
+    # Quality metric cases: (column, level, folder_stem)
+    FP_CASES = [
+        ("fp_brightness",    "high", "fp_brightness_high",    "FP — High Brightness region"),
+        ("fp_brightness",    "low",  "fp_brightness_low",     "FP — Low Brightness region"),
+        ("fp_contrast",      "high", "fp_contrast_high",      "FP — High Contrast region"),
+        ("fp_contrast",      "low",  "fp_contrast_low",       "FP — Low Contrast region"),
+        ("fp_edge_strength", "high", "fp_edge_strength_high", "FP — High Edge Strength region"),
+        ("fp_edge_strength", "low",  "fp_edge_strength_low",  "FP — Low Edge Strength region"),
+    ]
+
+    for col, level, stem, title in FP_CASES:
+        if col not in df_fp.columns:
+            continue
+        valid = df_fp.dropna(subset=[col, "flat_name", "fp_cx", "fp_cy", "fp_w", "fp_h"])
+        if len(valid) < 5:
+            continue
+
+        if level == "high":
+            threshold = valid[col].quantile(0.75)
+            subset = valid[valid[col] >= threshold].sort_values(col, ascending=False)
+        else:
+            threshold = valid[col].quantile(0.25)
+            subset = valid[valid[col] <= threshold].sort_values(col, ascending=True)
+
+        # Pick n_examples from different images
+        seen = set()
+        picks = []
+        for _, r in subset.iterrows():
+            if r["flat_name"] not in seen:
+                picks.append(r)
+                seen.add(r["flat_name"])
+            if len(picks) >= n_examples:
+                break
+
+        if not picks:
+            continue
+
+        case_dir = os.path.join(report_dir, stem)
+        os.makedirs(case_dir, exist_ok=True)
+
+        saved = 0
+        for row in picks:
+            img_path = os.path.join(image_dir, f"{row['flat_name']}.jpg")
+            img_bgr = _cv2.imread(img_path)
+            if img_bgr is None:
+                continue
+
+            ih, iw = img_bgr.shape[:2]
+            # Convert normalised coords to pixel coords
+            fx1 = max(0, int((row["fp_cx"] - row["fp_w"] / 2) * iw))
+            fy1 = max(0, int((row["fp_cy"] - row["fp_h"] / 2) * ih))
+            fx2 = min(iw, int((row["fp_cx"] + row["fp_w"] / 2) * iw))
+            fy2 = min(ih, int((row["fp_cy"] + row["fp_h"] / 2) * ih))
+
+            # Thin magenta bbox (1 px)
+            _cv2.rectangle(img_bgr, (fx1, fy1), (fx2, fy2), (255, 0, 255), 1)
+
+            out_name = f"{row['flat_name']}_{modality}_full.png"
+            out_path = os.path.join(case_dir, out_name)
+            plt.imsave(out_path, _cv2.cvtColor(img_bgr, _cv2.COLOR_BGR2RGB))
+            saved += 1
+
+        print(f"  FP examples [{stem}]: {saved} images saved → {case_dir}")

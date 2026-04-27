@@ -1,1 +1,6 @@
-
+subgroup_type,subgroup_value,count,detected,missed,recall
+day_night,day,10015,9319,696,0.9305
+day_night,night,4674,4376,298,0.9362
+size_category,large,3194,3010,184,0.9424
+size_category,medium,11261,10492,769,0.9317
+size_category,small,234,193,41,0.8248

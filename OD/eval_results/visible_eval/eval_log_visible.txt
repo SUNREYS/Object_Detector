@@ -7,20 +7,20 @@ Found 14045 validation images in C:\Users\rima\Desktop\rima_exjobb\datasets\imag
 Running predictions (conf=0.25, iou_thresh=0.5)...
 
 Saved per-image results: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\per_image_results_visible.csv (14045 rows)
-Saved per-object results: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\per_object_results_visible.csv (0 rows)
-Saved FP results: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\per_fp_results_visible.csv (14410 rows)
+Saved per-object results: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\per_object_results_visible.csv (14689 rows)
+Saved FP results: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\per_fp_results_visible.csv (715 rows)
 Saved subgroup summary: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\subgroup_summary_visible.csv
 
 ============================================================
 1. OVERALL DETECTION PERFORMANCE — VISIBLE
 ============================================================
-  GT objects          : 0
-  True Positives      : 0
-  False Positives     : 14410
-  False Negatives     : 0
-  Precision           : 0.0000
-  Recall              : 0.0000
-  F1 Score            : 0.0000
+  GT objects          : 14689
+  True Positives      : 13695
+  False Positives     : 715
+  False Negatives     : 994
+  Precision           : 0.9504
+  Recall              : 0.9323
+  F1 Score            : 0.9413
 
   How each value is computed:
   GT objects     = total ground-truth pedestrian bounding boxes in the validation set
@@ -35,6 +35,12 @@ Saved subgroup summary: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visibl
 ============================================================
 2. DAY / NIGHT / SIZE RECALL — VISIBLE
 ============================================================
+  Recall day          : 0.9305  (9319/10015)
+  Recall night        : 0.9362  (4376/4674)
+  Recall small        : 0.8248  (193/234)
+  Recall medium       : 0.9317  (10492/11261)
+  Recall large        : 0.9424  (3010/3194)
+  (Size defined by bbox height at 512px resolution: small ≤ 32px, medium 33–96px, large >96px)
 
   How each value is computed:
   Recall [group] = pedestrians detected in that group / all GT pedestrians in that group
@@ -48,7 +54,61 @@ Saved subgroup summary: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visibl
   ghost_score: pixel-level artefact between generated and thermal GT (0%=identical, 100%=completely different)
   hallucination_score: fraction of generated edges absent from thermal GT (0%=none invented, 100%=all invented)
   object_ssim: structural similarity to thermal GT (0%=different, 100%=identical)
-  (no thermal GT available — ghost metrics skipped)
+
+  ghost_score              : mean=18.5%  std=7.9%
+  hallucination_score      : mean=80.3%  std=15.7%
+  object_ssim              : mean=19.6%  std=12.0%
+
+  Per-object level (all pedestrian bounding boxes):
+    ghost_score              : mean=18.5%  std=8.1%  median=17.3%
+    hallucination_score      : mean=81.1%  std=16.7%  median=84.6%
+    object_ssim              : mean=19.1%  std=13.5%  median=19.0%
+
+  By day/night (per-image averages):
+    Day      ghost_score              : mean=17.8%  std=5.8%
+    Day      hallucination_score      : mean=77.4%  std=16.7%
+    Day      object_ssim              : mean=17.3%  std=11.9%
+    Night    ghost_score              : mean=19.8%  std=10.7%
+    Night    hallucination_score      : mean=85.7%  std=12.1%
+    Night    object_ssim              : mean=24.0%  std=10.8%
+
+  ── Detected vs Missed Pedestrians ──────────────────────────────
+
+  Ghost Score
+  Definition: how much the generated image differs from the original thermal (pixel-level artefacts). 0% = perfect match, 100% = completely different. Lower = better quality, easier to detect.
+    Detected pedestrians : mean 18.4%  (median 17.3%)   n=13,693
+    Missed   pedestrians : mean 19.6%  (median 18.3%)   n=985
+    Δ (detected − missed): -1.2 pp
+
+  Hallucination Score
+  Definition: fraction of edges in the generated image that do NOT exist in the real thermal. 0% = all edges are real, 100% = all edges are invented by the model. High score means the model added fake structure.
+    Detected pedestrians : mean 80.9%  (median 84.4%)   n=13,693
+    Missed   pedestrians : mean 83.1%  (median 87.6%)   n=985
+    Δ (detected − missed): -2.2 pp
+
+  SSIM (Structural Similarity)
+  Definition: how structurally close the generated pedestrian crop is to the real thermal image. 0% = completely different, 100% = identical. Higher = better quality, easier to detect.
+    Detected pedestrians : mean 19.1%  (median 19.1%)   n=13,693
+    Missed   pedestrians : mean 18.6%  (median 17.3%)   n=985
+    Δ (detected − missed): +0.5 pp
+
+============================================================
+3c. LPIPS (PERCEPTUAL SIMILARITY) — VISIBLE
+============================================================
+  LPIPS = Learned Perceptual Image Patch Similarity.
+  Measures how different the generated image LOOKS compared to the real thermal,
+  using deep neural-network features (not just pixel differences).
+  Scale: 0.0 = perceptually identical, ~0.5+ = very different.
+  Lower LPIPS = higher perceptual quality = should be easier to detect.
+
+  Per-image mean LPIPS : 0.470  (std 0.080)
+  Per-object mean LPIPS: 0.475  (std 0.085,  median 0.481)
+
+  LPIPS — Detected vs Missed pedestrians:
+  (Lower = generated image looks more like real thermal = easier to detect)
+    Detected pedestrians : mean 0.475  (median 0.482)   n=13,447
+    Missed   pedestrians : mean 0.473  (median 0.476)   n=848
+    Δ (detected − missed): +0.002  (no quality advantage for detected)
 
 ============================================================
 5. CORRELATION WITH DETECTION PERFORMANCE — VISIBLE
@@ -60,7 +120,10 @@ Saved subgroup summary: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visibl
 
   Metric                       Corr w/ recall        Corr w/ f1  Corr w/ mean_conf
   -----------------------  ----------------  ----------------  ----------------
-  sharpness                  +nan             +nan             +0.0706*          
+  sharpness                  -0.0151             +0.0468*            +0.0706*          
+  ghost_score                -0.0325*            -0.0157             +0.0688*          
+  object_ssim                +0.0248             +0.0258*            -0.0292*          
+  lpips_mean                 -0.0123             -0.0035             +0.0603*          
   (* p < 0.05)
 
   How each value is computed:
@@ -70,17 +133,36 @@ Saved subgroup summary: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visibl
   p-value tests whether the correlation is statistically different from zero; * means p < 0.05.
 
 ============================================================
+6. SHARPNESS × SIZE RECALL TABLE — VISIBLE
+============================================================
+  (median sharpness = 113.13  |  sharpness = Laplacian variance of luminance)
+  (size: small = bbox height ≤ 32px, medium = 33–96px, large = >96px, at 512px resolution)
+
+  Overall:
+                      Small (≤32px)  Medium (33-96px)   Large (>96px)
+                     --------------  ----------------  --------------
+      low sharpness     0.8889 (81)   0.9298 (5242)   0.9461 (2021)
+     high sharpness    0.7908 (153)   0.9334 (6019)   0.9361 (1173)
+
+  How each value is computed:
+  Cell value     = detected / total GT objects in that (sharpness, size) group
+  (n)            = total GT pedestrians in that cell
+  Sharpness      = Laplacian variance of the object crop luminance channel;
+                   low/high split at the MEDIAN sharpness across all objects
+  Object size    = bounding-box height at 512×512px: small ≤ 32px, medium 33–96px, large > 96px
+
+============================================================
 7. FALSE POSITIVE ANALYSIS — VISIBLE
 ============================================================
-  Total FP        : 14410
+  Total FP        : 715
   Total images    : 14045
-  FPPI            : 1.0260  (false positives per image)
+  FPPI            : 0.0509  (false positives per image)
 
   FPPI by day/night:
-    Day     : 1.0718  (9793 FPs / 9137 images)
-    Night   : 0.9407  (4617 FPs / 4908 images)
+    Day     : 0.0519  (474 FPs / 9137 images)
+    Night   : 0.0491  (241 FPs / 4908 images)
 
-  95.3% of FPs had confidence > 0.5 (high-confidence errors)
+  50.5% of FPs had confidence > 0.5 (high-confidence errors)
 
   How each value is computed:
   FPPI           = total false positives / total validation images
@@ -95,9 +177,9 @@ Saved subgroup summary: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visibl
   (median=135.55; 'low'=below, 'high'=at or above)
   Group       Low Recall  High Recall    Low F1   High F1   N low   N high
   --------  ----------  -----------  --------  --------  ------  -------
-  Overall         0.0000       0.0000    0.0000    0.0000    7022     7023
-  Day             0.0000       0.0000    0.0000    0.0000    5337     3800
-  Night           0.0000       0.0000    0.0000    0.0000    1685     3223
+  Overall         0.9419       0.9264    0.9410    0.9414    7022     7023
+  Day             0.9401       0.9243    0.9399    0.9416    5337     3800
+  Night           0.9463       0.9308    0.9438    0.9410    1685     3223
 
   How each value is computed:
   Images are split into two halves at the MEDIAN value of the metric.
@@ -108,10 +190,124 @@ Saved subgroup summary: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visibl
   N low / N high = number of IMAGES in each half (not objects)
 
 ============================================================
+8. PERFORMANCE BY HALLUCINATION_SCORE — VISIBLE
+============================================================
+  (median=0.83; 'low'=below, 'high'=at or above)
+  Group       Low Recall  High Recall    Low F1   High F1   N low   N high
+  --------  ----------  -----------  --------  --------  ------  -------
+  Overall         0.9392       0.9258    0.9404    0.9421   10872     3173
+  Day             0.9394       0.9182    0.9432    0.9377    7386     1751
+  Night           0.9385       0.9353    0.9284    0.9475    3486     1422
+
+  How each value is computed:
+  Images are split into two halves at the MEDIAN value of the metric.
+  Low  = images where the metric is BELOW the median.
+  High = images where the metric is AT OR ABOVE the median.
+  Recall  = sum(TP in group) / sum(TP + FN in group)  — fraction of pedestrians found
+  F1      = 2×P×R / (P+R) where P = sum(TP) / sum(TP+FP) in that group
+  N low / N high = number of IMAGES in each half (not objects)
+
+============================================================
+8. PERFORMANCE BY OBJECT_SSIM — VISIBLE
+============================================================
+  (median=0.19; 'low'=below, 'high'=at or above)
+  Group       Low Recall  High Recall    Low F1   High F1   N low   N high
+  --------  ----------  -----------  --------  --------  ------  -------
+  Overall         0.9233       0.9424    0.9327    0.9507   10872     3173
+  Day             0.9230       0.9444    0.9347    0.9523    7476     1661
+  Night           0.9248       0.9404    0.9226    0.9491    3396     1512
+
+  How each value is computed:
+  Images are split into two halves at the MEDIAN value of the metric.
+  Low  = images where the metric is BELOW the median.
+  High = images where the metric is AT OR ABOVE the median.
+  Recall  = sum(TP in group) / sum(TP + FN in group)  — fraction of pedestrians found
+  F1      = 2×P×R / (P+R) where P = sum(TP) / sum(TP+FP) in that group
+  N low / N high = number of IMAGES in each half (not objects)
+
+============================================================
+8. PERFORMANCE BY LPIPS_MEAN — VISIBLE
+============================================================
+  (median=0.48; 'low'=below, 'high'=at or above)
+  Group       Low Recall  High Recall    Low F1   High F1   N low   N high
+  --------  ----------  -----------  --------  --------  ------  -------
+  Overall         0.9312       0.9332    0.9321    0.9486   10930     3115
+  Day             0.9316       0.9295    0.9344    0.9470    7418     1719
+  Night           0.9303       0.9396    0.9257    0.9514    3512     1396
+
+  How each value is computed:
+  Images are split into two halves at the MEDIAN value of the metric.
+  Low  = images where the metric is BELOW the median.
+  High = images where the metric is AT OR ABOVE the median.
+  Recall  = sum(TP in group) / sum(TP + FN in group)  — fraction of pedestrians found
+  F1      = 2×P×R / (P+R) where P = sum(TP) / sum(TP+FP) in that group
+  N low / N high = number of IMAGES in each half (not objects)
+
+============================================================
+9. ROOT CAUSE ANALYSIS (Feature Importance) — VISIBLE
+============================================================
+  Logistic regression: P(detected=1 | object features)
+  Features are standardised (mean=0, std=1) so coefficients are directly comparable.
+  Positive coeff → higher value of this feature → object MORE likely to be detected.
+  Negative coeff → higher value → object LESS likely to be detected.
+  NOTE: coefficients are CONDITIONAL effects (all other features held constant).
+        When features are correlated, individual signs may differ from bivariate
+        correlations in Section 5 — this is a known suppressor-variable effect.
+
+  Feature                     Coefficient   Direction
+  -------------------------  ------------  ----------
+  bbox_area_px                    +0.4341     helps ↑
+  ghost_score                     -0.3292     hurts ↓
+  object_lpips                    +0.2506     helps ↑
+  hallucination_score             -0.1609     hurts ↓
+  object_brightness               +0.1470     helps ↑
+  object_contrast                 -0.1437     hurts ↓
+  fg_bg_diff                      -0.0906     hurts ↓
+  object_blur                     -0.0682     hurts ↓
+  object_ssim                     -0.0444     hurts ↓
+  object_edge_strength            +0.0413     helps ↑
+
+  Model accuracy: 0.9407 (on training data)
+  N samples: 14295
+
+  How each value is computed:
+  Unit of analysis = one row per GT pedestrian bounding box.
+  Features are standardised: each is centred at 0 and scaled to std=1
+  so that coefficients from different scales are directly comparable.
+  Coefficient = weight in the logistic regression equation:
+    P(detected=1) = sigmoid( w1×feat1 + w2×feat2 + ... + bias )
+  Larger absolute coefficient = stronger predictor of detection outcome.
+  Model accuracy = fraction of objects correctly classified as detected/missed
+  (measured on the same training data, so it is an optimistic upper bound).
+
+============================================================
 
 
 Generating plots...
+  Saved: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\sharpness_size_heatmap_overall.png
+  Saved: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\sharpness_size_heatmap_day.png
+  Saved: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\sharpness_size_heatmap_night.png
   Saved: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\fp_analysis.png
+  Saved: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\appendix\lpips_vs_confidence.png
+  Saved example crops: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\examples\ghost_score_high.png
+  Saved example crops: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\examples\hallucination_high.png
+  Saved example crops: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\examples\sharpness_low.png
+  Saved example crops: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\examples\ssim_low.png
+  Saved example crops: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\examples\ssim_high.png
+  Saved example crops: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\examples\lpips_high.png
+  Saved example crops: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\examples\lpips_low.png
+  Saved example crops: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\examples\fg_bg_diff_low.png
+  Saved example crops: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\examples\fg_bg_diff_high.png
+  Saved example crops: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\examples\contrast_low.png
+  Saved example crops: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\examples\contrast_high.png
+  Saved example crops: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\examples\edge_strength_low.png
+  Saved example crops: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\examples\edge_strength_high.png
+  FP examples [fp_brightness_high]: 3 images saved → C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\images_report\fp_brightness_high
+  FP examples [fp_brightness_low]: 3 images saved → C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\images_report\fp_brightness_low
+  FP examples [fp_contrast_high]: 3 images saved → C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\images_report\fp_contrast_high
+  FP examples [fp_contrast_low]: 3 images saved → C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\images_report\fp_contrast_low
+  FP examples [fp_edge_strength_high]: 3 images saved → C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\images_report\fp_edge_strength_high
+  FP examples [fp_edge_strength_low]: 3 images saved → C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\images_report\fp_edge_strength_low
 
 All results saved to: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval
   Saved: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\appendix\quality_vs_perf_brightness.png
@@ -119,5 +315,9 @@ All results saved to: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_
   Saved: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\quality_vs_perf_sharpness.png
   Saved: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\appendix\quality_vs_perf_edge_density.png
   Saved: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\appendix\quality_vs_perf_blur.png
+  Saved: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\quality_vs_perf_ghost_score.png
+  Saved: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\quality_vs_perf_hallucination_score.png
+  Saved: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\quality_vs_perf_object_ssim.png
+  Saved: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\quality_vs_perf_lpips_mean.png
 
 Log saved to: C:\Users\rima\Desktop\rima_exjobb\OD\eval_results\visible_eval\eval_log_visible.txt
